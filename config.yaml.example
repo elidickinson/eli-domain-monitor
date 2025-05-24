@@ -22,6 +22,30 @@ general:
   # Cache settings for domain WHOIS data
   cache_hours: 24     # Hours to cache domain WHOIS data before re-checking
 
+# Alert conditions configuration
+alert_conditions:
+  # Domain statuses that trigger alerts
+  # Default list includes critical statuses only
+  # You can add 'autoRenewPeriod' or 'renewPeriod' if you want alerts for these
+  concerning_statuses:
+    - redemptionPeriod
+    - inactive
+    - pendingDelete
+    - pendingTransfer
+    - clientHold
+    - serverHold
+    - serverRenewProhibited
+    # - autoRenewPeriod    # Uncomment to get alerts during auto-renew period
+    # - renewPeriod        # Uncomment to get alerts during renew period
+  
+  # Alert on DNS resolution changes (disabled by default)
+  alert_on_resolution_changes:
+    apex: false    # Alert when apex domain (e.g., example.com) resolution changes
+    www: false     # Alert when www subdomain resolution changes
+  
+  # Alert on nameserver changes (enabled by default)
+  alert_on_nameserver_changes: true
+
 email:
   # Enable/disable email alerts
   enabled: true

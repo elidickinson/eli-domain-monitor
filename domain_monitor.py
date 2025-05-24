@@ -97,14 +97,12 @@ def check_domains(domain, file, config, alert_days, quiet, send_email, delay, db
     # Check all domains
     results = []
     domains_to_alert = []
-    alert_threshold = cfg.get_alert_days()
-
     for domain in domains_to_check:
         domain_info = check_domain(domain, cfg, force_check=no_cache)
         results.append(domain_info)
 
         # Check if domain needs alert
-        needs_alert_flag, reason = needs_alert(domain_info, alert_threshold)
+        needs_alert_flag, reason = needs_alert(domain_info, cfg)
         if needs_alert_flag:
             domains_to_alert.append((domain_info, reason))
 

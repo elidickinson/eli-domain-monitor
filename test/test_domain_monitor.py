@@ -10,7 +10,7 @@ import tempfile
 from datetime import datetime
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from src.domain_checker import check_domain
+from src.domain_checker import check_domain, needs_alert
 from src.config import Config
 from src.domain_info import DomainInfo
 from src.database import DatabaseManager
@@ -25,7 +25,8 @@ def test_config():
     db_path = db_file.name
     db_file.close()
 
-    config = Config()
+    # Create config with non-existent config file to ensure defaults are used
+    config = Config(config_path='non_existent_config.yaml')
     config.data['general']['query_delay'] = 0.5  # Use shorter delay for testing
     config.data['general']['query_jitter'] = 0.2
     config.data['general']['db_path'] = db_path
@@ -321,3 +322,95 @@ def test_database_domain_whois_storage():
         # Test cache age check
         assert not db.should_check_domain(domain, 24)  # Just updated
         assert db.should_check_domain(domain, 0)  # Expired cache
+
+
+def test_needs_alert_with_configurable_conditions(test_config):
+    """Test needs_alert function with configurable alert conditions."""
+    # Test 1: Domain expiring soon
+    info = DomainInfo("example.com")
+    info.days_until_expiration = 15
+    test_config.data['general']['alert_days'] = 30
+    
+    should_alert, reason = needs_alert(info, test_config)
+    assert should_alert
+    assert "Expiring soon" in reason
+    assert "15 days remaining" in reason
+    
+    # Test 2: Concerning status (default list)
+    info2 = DomainInfo("example2.com")
+    info2.days_until_expiration = 100
+    info2.status = ["clientTransferProhibited", "redemptionPeriod"]
+    info2.has_concerning_status = True
+    
+    should_alert, reason = needs_alert(info2, test_config)
+    assert should_alert
+    assert "Concerning status" in reason
+    assert "redemptionPeriod" in reason
+    
+    # Test 3: Custom concerning status
+    info3 = DomainInfo("example3.com")
+    info3.days_until_expiration = 100
+    info3.status = ["clientTransferProhibited", "autoRenewPeriod"]
+    
+    # Add autoRenewPeriod to concerning statuses
+    test_config.data['alert_conditions']['concerning_statuses'].append('autoRenewPeriod')
+    
+    should_alert, reason = needs_alert(info3, test_config)
+    assert should_alert
+    assert "Concerning status" in reason
+    assert "autoRenewPeriod" in reason
+    
+    # Test 4: Nameserver changes (enabled by default)
+    info4 = DomainInfo("example4.com")
+    info4.days_until_expiration = 100
+    info4.nameservers_changed = True
+    info4.added_nameservers = ["ns3.example.com"]
+    info4.removed_nameservers = ["ns1.example.com"]
+    
+    # Should alert by default
+    should_alert, reason = needs_alert(info4, test_config)
+    assert should_alert
+    assert "Nameserver changes detected" in reason
+    assert "added: ns3.example.com" in reason
+    assert "removed: ns1.example.com" in reason
+    
+    # Disable nameserver change alerts
+    test_config.data['alert_conditions']['alert_on_nameserver_changes'] = False
+    should_alert, reason = needs_alert(info4, test_config)
+    assert not should_alert
+    
+    # Test 5: Apex resolution changes (disabled by default)
+    info5 = DomainInfo("example5.com")
+    info5.days_until_expiration = 100
+    info5.apex_changed = True
+    info5.apex_added_ips = ["1.2.3.4"]
+    info5.apex_removed_ips = ["5.6.7.8"]
+    
+    # Should not alert when disabled
+    should_alert, reason = needs_alert(info5, test_config)
+    assert not should_alert
+    
+    # Enable apex resolution change alerts
+    test_config.data['alert_conditions']['alert_on_resolution_changes']['apex'] = True
+    should_alert, reason = needs_alert(info5, test_config)
+    assert should_alert
+    assert "Apex resolution changes detected" in reason
+    assert "added: 1.2.3.4" in reason
+    assert "removed: 5.6.7.8" in reason
+    
+    # Test 6: Domain doesn't exist
+    info6 = DomainInfo("example6.com")
+    info6.domain_not_exist = True
+    
+    should_alert, reason = needs_alert(info6, test_config)
+    assert should_alert
+    assert "Domain does not exist (NXDOMAIN)" in reason
+    
+    # Test 7: Error checking domain
+    info7 = DomainInfo("example7.com")
+    info7.error = "Connection timeout"
+    
+    should_alert, reason = needs_alert(info7, test_config)
+    assert should_alert
+    assert "Error checking domain" in reason
+    assert "Connection timeout" in reason

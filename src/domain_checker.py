@@ -12,10 +12,8 @@ from .config import Config
 
 logger = logging.getLogger('domain_monitor.checker')
 
-# Constants
-CONCERNING_STATUSES = {
-    'autoRenewPeriod',
-    'renewPeriod',
+# Constants - Will be overridden by config
+DEFAULT_CONCERNING_STATUSES = {
     'redemptionPeriod',
     'inactive',
     'pendingDelete',
@@ -93,9 +91,10 @@ def check_domain(domain: str, config: Config, force_check: bool = False) -> Doma
                 else:
                     info.status = [s.strip() for s in status.split()]
 
-                # Check for concerning statuses
+                # Check for concerning statuses from config
+                concerning_statuses = {s.lower() for s in config.get_concerning_statuses()}
                 info.has_concerning_status = any(
-                    any(concerning in s.lower() for concerning in CONCERNING_STATUSES)
+                    any(concerning in s.lower() for concerning in concerning_statuses)
                     for s in info.status
                 )
 
@@ -261,13 +260,14 @@ def _check_resolution_changes(domain: str, info: DomainInfo, config: Config) -> 
                 logger.warning(f"  WWW subdomain became NXDOMAIN")
 
 
-def needs_alert(domain_info: DomainInfo, alert_threshold: int) -> Tuple[bool, str]:
-    """Determine if an alert should be sent for this domain."""
+def needs_alert(domain_info: DomainInfo, config: Config) -> Tuple[bool, str]:
+    """Determine if an alert should be sent for this domain based on config."""
 
     if domain_info.error:
         return True, f"Error checking domain: {domain_info.error}"
 
     reasons = []
+    alert_threshold = config.get_alert_days()
 
     # Check if domain doesn't exist
     if domain_info.domain_not_exist:
@@ -279,18 +279,19 @@ def needs_alert(domain_info: DomainInfo, alert_threshold: int) -> Tuple[bool, st
     elif domain_info.days_until_expiration is not None and domain_info.days_until_expiration <= alert_threshold:
         reasons.append(f"Expiring soon ({domain_info.days_until_expiration} days remaining)")
 
-    # Check concerning statuses
+    # Check concerning statuses from config
+    concerning_statuses = {s.lower() for s in config.get_concerning_statuses()}
     concerning = []
     for status in domain_info.status:
-        for concern in CONCERNING_STATUSES:
-            if concern.lower() in status.lower():
+        for concern in concerning_statuses:
+            if concern in status.lower():
                 concerning.append(status)
 
     if concerning:
         reasons.append(f"Concerning status: {', '.join(concerning)}")
 
-    # Check for nameserver changes
-    if domain_info.nameservers_changed:
+    # Check for nameserver changes (only if configured)
+    if config.should_alert_on_nameserver_changes() and domain_info.nameservers_changed:
         changes = []
         if domain_info.added_nameservers:
             changes.append(f"added: {', '.join(domain_info.added_nameservers)}")
@@ -302,8 +303,8 @@ def needs_alert(domain_info: DomainInfo, alert_threshold: int) -> Tuple[bool, st
         else:
             reasons.append("Nameserver changes detected")
 
-    # Check for apex resolution changes
-    if domain_info.apex_changed:
+    # Check for apex resolution changes (only if configured)
+    if config.should_alert_on_apex_changes() and domain_info.apex_changed:
         changes = []
         if domain_info.apex_added_ips:
             changes.append(f"added: {', '.join(domain_info.apex_added_ips)}")
@@ -315,8 +316,8 @@ def needs_alert(domain_info: DomainInfo, alert_threshold: int) -> Tuple[bool, st
         else:
             reasons.append("Apex resolution changes detected")
 
-    # Check for www resolution changes
-    if domain_info.www_changed:
+    # Check for www resolution changes (only if configured)
+    if config.should_alert_on_www_changes() and domain_info.www_changed:
         changes = []
         if domain_info.www_added_ips:
             changes.append(f"added: {', '.join(domain_info.www_added_ips)}")

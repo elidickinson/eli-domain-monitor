@@ -42,6 +42,22 @@ class Config:
                 'from_address': None,
                 'to_addresses': [],
                 'subject_prefix': '[Domain Monitor]',
+            },
+            'alert_conditions': {
+                'concerning_statuses': [
+                    'redemptionPeriod',
+                    'inactive',
+                    'pendingDelete',
+                    'pendingTransfer',
+                    'clientHold',
+                    'serverHold',
+                    'serverRenewProhibited'
+                ],
+                'alert_on_resolution_changes': {
+                    'apex': False,
+                    'www': False
+                },
+                'alert_on_nameserver_changes': True
             }
         }
         self.load()
@@ -122,3 +138,19 @@ class Config:
             email_config['from_address'] and
             email_config['to_addresses']
         )
+    
+    def get_concerning_statuses(self) -> List[str]:
+        """Get list of concerning domain statuses that trigger alerts."""
+        return self.data['alert_conditions']['concerning_statuses']
+    
+    def should_alert_on_nameserver_changes(self) -> bool:
+        """Check if alerts should be sent for nameserver changes."""
+        return self.data['alert_conditions']['alert_on_nameserver_changes']
+    
+    def should_alert_on_apex_changes(self) -> bool:
+        """Check if alerts should be sent for apex domain resolution changes."""
+        return self.data['alert_conditions']['alert_on_resolution_changes']['apex']
+    
+    def should_alert_on_www_changes(self) -> bool:
+        """Check if alerts should be sent for www subdomain resolution changes."""
+        return self.data['alert_conditions']['alert_on_resolution_changes']['www']

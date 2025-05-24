@@ -203,12 +203,42 @@ For Docker deployments, create a cron job that runs the container:
 
 ## Alert Conditions
 
-The script will generate alerts for domains under the following conditions:
+The script generates alerts based on configurable conditions. By default, it alerts for:
 
 - Domain expires within the configured threshold (default: 30 days)
-- Domain has a concerning status (redemptionPeriod, pendingDelete, pendingTransfer, clientHold, serverHold)
+- Domain has a concerning status (redemptionPeriod, pendingDelete, pendingTransfer, clientHold, serverHold, serverRenewProhibited, inactive)
 - Nameservers have changed since the last check
+- Domain doesn't exist (NXDOMAIN)
 - Error occurs while checking domain information
+
+Additional alert conditions can be configured in `config.yaml`:
+
+### Configurable Alert Settings
+
+```yaml
+alert_conditions:
+  # Domain statuses that trigger alerts
+  concerning_statuses:
+    - redemptionPeriod
+    - inactive
+    - pendingDelete
+    - pendingTransfer
+    - clientHold
+    - serverHold
+    - serverRenewProhibited
+    # - autoRenewPeriod    # Uncomment to get alerts during auto-renew period
+    # - renewPeriod        # Uncomment to get alerts during renew period
+  
+  # Alert on DNS resolution changes (disabled by default)
+  alert_on_resolution_changes:
+    apex: false    # Enable to alert when apex domain resolution changes
+    www: false     # Enable to alert when www subdomain resolution changes
+  
+  # Alert on nameserver changes (enabled by default)
+  alert_on_nameserver_changes: true
+```
+
+You can customize which statuses trigger alerts by modifying the `concerning_statuses` list. The `autoRenewPeriod` and `renewPeriod` statuses are not included by default but can be added if you want early warnings about domains entering renewal periods.
 
 ## Nameserver Change Detection
 
