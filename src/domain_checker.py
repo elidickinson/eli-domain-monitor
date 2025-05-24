@@ -22,8 +22,7 @@ CONCERNING_STATUSES = {
     'pendingTransfer',
     'clientHold',
     'serverHold',
-    'serverRenewProhibited',
-    'clientRenewProhibited'
+    'serverRenewProhibited'
 }
 
 
