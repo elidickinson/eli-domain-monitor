@@ -12,6 +12,21 @@ from .config import Config
 
 logger = logging.getLogger('domain_monitor.checker')
 
+def is_subdomain(domain: str) -> bool:
+    """
+    Determine if a domain is a subdomain.
+    A domain is considered a subdomain if it has more than 2 parts when split by dots.
+    Examples:
+        example.com -> False (2 parts)
+        www.example.com -> True (3 parts)
+        foo.bar.example.com -> True (4 parts)
+    """
+    parts = domain.lower().split('.')
+    # Basic check: if more than 2 parts, it's likely a subdomain
+    # This is a simple heuristic that works for most cases
+    return len(parts) > 2
+
+
 # Constants - Will be overridden by config
 DEFAULT_CONCERNING_STATUSES = {
     'redemptionPeriod',
@@ -27,6 +42,37 @@ DEFAULT_CONCERNING_STATUSES = {
 def check_domain(domain: str, config: Config, force_check: bool = False) -> DomainInfo:
     """Check a domain for expiration date, status, and nameservers with rate limiting."""
     info = DomainInfo(domain)
+
+    # Check if this is a subdomain
+    if is_subdomain(domain):
+        logger.info(f"Detected subdomain: {domain}, skipping WHOIS lookup")
+        
+        # For subdomains, we only check DNS resolution
+        # Treat the full subdomain as the "apex" for resolution purposes
+        subdomain_ips, subdomain_nxdomain = _check_domain_resolution(domain, '')
+        info.apex_ips = subdomain_ips
+        if subdomain_nxdomain:
+            info.domain_not_exist = True
+            logger.warning(f"Subdomain {domain} does not exist (NXDOMAIN)")
+        
+        # Track resolution changes for the subdomain
+        changed, added, removed, became_nxdomain = config.db.update_domain_resolution(
+            domain, '', subdomain_ips, subdomain_nxdomain
+        )
+        if changed:
+            info.apex_changed = True
+            info.apex_added_ips = added
+            info.apex_removed_ips = removed
+            logger.warning(f"Resolution change detected for subdomain {domain}")
+            if added:
+                logger.warning(f"  Added IPs: {', '.join(added)}")
+            if removed:
+                logger.warning(f"  Removed IPs: {', '.join(removed)}")
+            if became_nxdomain:
+                logger.warning(f"  Subdomain became NXDOMAIN")
+        
+        # Skip the rest of the WHOIS/nameserver checking
+        return info
 
     # Get configuration parameters
     query_delay = config.data['general']['query_delay']
@@ -267,6 +313,29 @@ def needs_alert(domain_info: DomainInfo, config: Config) -> Tuple[bool, str]:
         return True, f"Error checking domain: {domain_info.error}"
 
     reasons = []
+    
+    # For subdomains, we only care about resolution changes and NXDOMAIN
+    if is_subdomain(domain_info.domain):
+        # Check if subdomain doesn't exist
+        if domain_info.domain_not_exist:
+            reasons.append("Subdomain does not exist (NXDOMAIN)")
+        
+        # Check for resolution changes (only if configured)
+        if config.should_alert_on_apex_changes() and domain_info.apex_changed:
+            changes = []
+            if domain_info.apex_added_ips:
+                changes.append(f"added: {', '.join(domain_info.apex_added_ips)}")
+            if domain_info.apex_removed_ips:
+                changes.append(f"removed: {', '.join(domain_info.apex_removed_ips)}")
+            
+            if changes:
+                reasons.append(f"Resolution changes detected ({'; '.join(changes)})")
+            else:
+                reasons.append("Resolution changes detected")
+        
+        return bool(reasons), ", ".join(reasons)
+    
+    # Regular domain alert logic continues below
     alert_threshold = config.get_alert_days()
 
     # Check if domain doesn't exist

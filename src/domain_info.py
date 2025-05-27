@@ -35,6 +35,32 @@ class DomainInfo:
         if self.domain_not_exist:
             return f"{self.domain}: DOMAIN DOES NOT EXIST (NXDOMAIN)"
 
+        # Check if this is a subdomain (simple check for more than 2 parts)
+        is_subdomain = len(self.domain.split('.')) > 2
+        
+        if is_subdomain:
+            # For subdomains, we only show resolution info
+            resolution_parts = []
+            if self.apex_ips:
+                resolution_parts.append(f"resolves to: {', '.join(self.apex_ips)}")
+            else:
+                resolution_parts.append("resolves to: none")
+            
+            # Change notifications for subdomains
+            change_parts = []
+            if self.apex_changed:
+                added_str = f"IPs ADDED: {', '.join(self.apex_added_ips)}" if self.apex_added_ips else ""
+                removed_str = f"IPs REMOVED: {', '.join(self.apex_removed_ips)}" if self.apex_removed_ips else ""
+                change_sub_parts = [p for p in [added_str, removed_str] if p]
+                if change_sub_parts:
+                    change_parts.append('; '.join(change_sub_parts))
+                else:
+                    change_parts.append("RESOLUTION CHANGED")
+            
+            change_str = f" [{'; '.join(change_parts)}]" if change_parts else ""
+            
+            return f"{self.domain} (subdomain): {'; '.join(resolution_parts)}{change_str}"
+
         # Handle case where expiration_date might be None
         if self.expiration_date and self.days_until_expiration is not None:
             expiry_str = (f"expires in {self.days_until_expiration} days "

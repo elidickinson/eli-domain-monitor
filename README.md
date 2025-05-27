@@ -206,7 +206,7 @@ For Docker deployments, create a cron job that runs the container:
 The script generates alerts based on configurable conditions. By default, it alerts for:
 
 - Domain expires within the configured threshold (default: 30 days)
-- Domain has a concerning status (redemptionPeriod, pendingDelete, pendingTransfer, clientHold, serverHold, serverRenewProhibited, inactive)
+- Domain has a concerning status (e.g. redemptionPeriod, pendingDelete)
 - Nameservers have changed since the last check
 - Domain doesn't exist (NXDOMAIN)
 - Error occurs while checking domain information
@@ -228,12 +228,12 @@ alert_conditions:
     - serverRenewProhibited
     # - autoRenewPeriod    # Uncomment to get alerts during auto-renew period
     # - renewPeriod        # Uncomment to get alerts during renew period
-  
+
   # Alert on DNS resolution changes (disabled by default)
   alert_on_resolution_changes:
     apex: false    # Enable to alert when apex domain resolution changes
     www: false     # Enable to alert when www subdomain resolution changes
-  
+
   # Alert on nameserver changes (enabled by default)
   alert_on_nameserver_changes: true
 ```
