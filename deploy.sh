@@ -38,6 +38,7 @@ rsync -avz $DRY_RUN --delete \
       --exclude='src/__pycache__' \
       --exclude='logs/*' \
       --exclude='*.db' \
+      --exclude='*.png' \
       --include='domains.txt' \
       --filter=':- .gitignore' \
       -e "ssh -o RemoteCommand=none" \
