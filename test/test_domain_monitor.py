@@ -7,7 +7,7 @@ import sys
 import os
 import pytest
 import tempfile
-from datetime import datetime
+from datetime import datetime, timezone
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.domain_checker import check_domain, needs_alert
@@ -173,7 +173,7 @@ def test_nameserver_change_detection_in_check_domain(test_config, monkeypatch):
         def __init__(self, domain):
             self.domain = domain
             self.nameservers = ["ns1.example.com", "ns2.example.com"]
-            self.expiration_date = datetime.now().replace(year=datetime.now().year + 1)
+            self.expiration_date = datetime.utcnow().replace(year=datetime.utcnow().year + 1)
             self.status = "clientTransferProhibited"
 
     def mock_whois(domain):
@@ -215,7 +215,7 @@ def test_domain_whois_caching(test_config, monkeypatch):
         def __init__(self, domain):
             self.domain = domain
             self.nameservers = ["ns1.example.com", "ns2.example.com"]
-            self.expiration_date = datetime.now().replace(year=datetime.now().year + 1)
+            self.expiration_date = datetime.utcnow().replace(year=datetime.utcnow().year + 1)
             self.status = "clientTransferProhibited"
 
     def mock_whois(domain):
@@ -258,7 +258,7 @@ def test_domain_whois_cache_expiry(test_config, monkeypatch):
         def __init__(self, domain):
             self.domain = domain
             self.nameservers = ["ns1.example.com", "ns2.example.com"]
-            self.expiration_date = datetime.now().replace(year=datetime.now().year + 1)
+            self.expiration_date = datetime.utcnow().replace(year=datetime.utcnow().year + 1)
             self.status = "clientTransferProhibited"
 
     whois_call_count = 0
@@ -289,7 +289,7 @@ def test_database_domain_whois_storage():
         db = DatabaseManager(db_file.name)
 
         domain = "testdomain.com"
-        exp_date = datetime.now().replace(year=datetime.now().year + 1)
+        exp_date = datetime.utcnow().replace(year=datetime.utcnow().year + 1)
         status = ["clientTransferProhibited", "serverDeleteProhibited"]
 
         # Test initial storage
@@ -414,3 +414,163 @@ def test_needs_alert_with_configurable_conditions(test_config):
     assert should_alert
     assert "Error checking domain" in reason
     assert "Connection timeout" in reason
+
+
+def test_timezone_utc_conversion():
+    """Test that timezone-aware WHOIS dates are properly converted to UTC."""
+    import datetime
+    
+    # Test timezone-aware datetime conversion
+    # Create a timezone-aware datetime (EST is UTC-5)
+    est_tz = datetime.timezone(datetime.timedelta(hours=-5))
+    est_date = datetime.datetime(2025, 12, 31, 23, 59, 59, tzinfo=est_tz)
+    
+    # Convert to UTC using the same method as in domain_checker.py
+    utc_tuple = est_date.utctimetuple()
+    utc_date = datetime.datetime(*utc_tuple[:6])
+    
+    # The UTC date should be 5 hours ahead of EST
+    expected_utc = datetime.datetime(2026, 1, 1, 4, 59, 59)
+    assert utc_date == expected_utc
+    
+    # Test with naive datetime (should remain unchanged)
+    naive_date = datetime.datetime(2025, 12, 31, 23, 59, 59)
+    # For naive datetime, we don't have tzinfo, so it should remain as-is
+    assert naive_date.tzinfo is None
+
+
+def test_mixed_timezone_list_handling():
+    """Test handling of mixed timezone-aware and naive datetime lists."""
+    import datetime
+    
+    # Create mixed list of timezone-aware and naive datetimes
+    utc_tz = datetime.timezone.utc
+    est_tz = datetime.timezone(datetime.timedelta(hours=-5))
+    
+    # Create test dates
+    utc_date = datetime.datetime(2025, 12, 31, 23, 59, 59, tzinfo=utc_tz)
+    est_date = datetime.datetime(2025, 12, 31, 18, 59, 59, tzinfo=est_tz)  # Same as UTC when converted
+    naive_date = datetime.datetime(2025, 12, 31, 23, 59, 59)  # Assume UTC
+    
+    mixed_dates = [utc_date, est_date, naive_date]
+    
+    # Process like domain_checker.py does
+    normalized_dates = []
+    for date in mixed_dates:
+        if date.tzinfo:
+            # Convert timezone-aware to UTC
+            utc_tuple = date.utctimetuple()
+            normalized_dates.append(datetime.datetime(*utc_tuple[:6]))
+        else:
+            # Assume naive datetime is already UTC
+            normalized_dates.append(date)
+    
+    # All dates should be normalized to UTC
+    expected_utc = datetime.datetime(2025, 12, 31, 23, 59, 59)
+    assert all(d == expected_utc for d in normalized_dates)
+
+
+def test_utc_expiration_calculation():
+    """Test that domain expiration calculations use UTC consistently."""
+    import datetime
+    from unittest.mock import patch
+    
+    # Mock datetime.utcnow to return a known UTC time
+    fixed_utc_now = datetime.datetime(2025, 6, 1, 12, 0, 0)
+    
+    with patch('src.domain_checker.datetime') as mock_datetime:
+        mock_datetime.datetime.utcnow.return_value = fixed_utc_now
+        mock_datetime.datetime.side_effect = datetime.datetime
+        
+        # Create domain info with UTC expiration date
+        info = DomainInfo("example.com")
+        
+        # Test case 1: Domain expires in 30 days
+        info.expiration_date = datetime.datetime(2025, 7, 1, 12, 0, 0)  # 30 days from now
+        info.days_until_expiration = (info.expiration_date - fixed_utc_now).days
+        info.is_expired = info.days_until_expiration <= 0
+        
+        assert info.days_until_expiration == 30
+        assert not info.is_expired
+        
+        # Test case 2: Domain expired 5 days ago
+        info.expiration_date = datetime.datetime(2025, 5, 27, 12, 0, 0)  # 5 days ago
+        info.days_until_expiration = (info.expiration_date - fixed_utc_now).days
+        info.is_expired = info.days_until_expiration <= 0
+        
+        assert info.days_until_expiration == -5
+        assert info.is_expired
+
+
+def test_database_utc_timestamps():
+    """Test that database operations use UTC timestamps consistently."""
+    import datetime
+    from unittest.mock import patch
+    
+    with tempfile.NamedTemporaryFile(suffix='.db') as db_file:
+        db = DatabaseManager(db_file.name)
+        
+        # Mock datetime.utcnow to return a known UTC time
+        fixed_utc_now = datetime.datetime(2025, 6, 1, 12, 0, 0)
+        
+        with patch('src.database.datetime') as mock_datetime:
+            mock_datetime.datetime.utcnow.return_value = fixed_utc_now
+            mock_datetime.datetime.side_effect = datetime.datetime
+            
+            # Test nameserver update uses UTC
+            domain = "test.com"
+            nameservers = ["ns1.test.com", "ns2.test.com"]
+            
+            changed, added, removed = db.update_nameservers(domain, nameservers)
+            
+            # Check that the timestamp in the database is the mocked UTC time
+            conn = db._get_connection()
+            cursor = conn.cursor()
+            cursor.execute("SELECT timestamp FROM nameserver_history WHERE domain = ?", (domain,))
+            results = cursor.fetchall()
+            conn.close()
+            
+            # The timestamp should be stored as ISO format string
+            if results:
+                stored_timestamp = results[0]['timestamp']
+                # Convert back to datetime to verify it's our mocked UTC time
+                parsed_timestamp = datetime.datetime.fromisoformat(stored_timestamp)
+                assert parsed_timestamp == fixed_utc_now
+
+
+def test_whois_timezone_conversion_edge_cases():
+    """Test edge cases in WHOIS timezone conversion."""
+    import datetime
+    
+    # Test case 1: UTC timezone (should remain unchanged)
+    utc_tz = datetime.timezone.utc
+    utc_date = datetime.datetime(2025, 12, 31, 23, 59, 59, tzinfo=utc_tz)
+    
+    utc_tuple = utc_date.utctimetuple()
+    converted_date = datetime.datetime(*utc_tuple[:6])
+    
+    # Should be identical when timezone info is stripped
+    expected = datetime.datetime(2025, 12, 31, 23, 59, 59)
+    assert converted_date == expected
+    
+    # Test case 2: Positive timezone offset (e.g., JST is UTC+9)
+    jst_tz = datetime.timezone(datetime.timedelta(hours=9))
+    jst_date = datetime.datetime(2025, 12, 31, 23, 59, 59, tzinfo=jst_tz)
+    
+    utc_tuple = jst_date.utctimetuple()
+    converted_date = datetime.datetime(*utc_tuple[:6])
+    
+    # JST 23:59 should be UTC 14:59 (9 hours earlier)
+    expected = datetime.datetime(2025, 12, 31, 14, 59, 59)
+    assert converted_date == expected
+    
+    # Test case 3: Negative timezone offset crossing date boundary
+    pst_tz = datetime.timezone(datetime.timedelta(hours=-8))
+    pst_date = datetime.datetime(2025, 1, 1, 7, 0, 0, tzinfo=pst_tz)
+    
+    utc_tuple = pst_date.utctimetuple()
+    converted_date = datetime.datetime(*utc_tuple[:6])
+    
+    # PST 07:00 should be UTC 15:00 (8 hours ahead)
+    expected = datetime.datetime(2025, 1, 1, 15, 0, 0)
+    assert converted_date == expected

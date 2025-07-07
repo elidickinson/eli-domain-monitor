@@ -14,7 +14,7 @@ import click
 
 from src.config import Config, DEFAULT_CONFIG_PATH
 from src.domain_checker import check_domain, needs_alert
-from src.email_sender import send_alert_email, send_test_email, print_alert_report
+from src.email_sender import send_alert_email, send_test_email, print_alert_report, save_json_report
 from src.database import DatabaseManager
 
 # Configure logging
@@ -123,6 +123,9 @@ def check_domains(domain, file, config, alert_days, quiet, send_email, delay, db
         else:
             # When email is disabled (--no-email), print report to stdout
             print_alert_report(domains_to_alert)
+    
+    # Always save JSON report if web display is enabled
+    save_json_report(cfg, domains_to_alert)
 
     # Return non-zero exit code if any domains need attention (useful for cron jobs)
     return 0 if not domains_to_alert else 1

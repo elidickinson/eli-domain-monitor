@@ -2,6 +2,9 @@
 
 import smtplib
 import logging
+import json
+import os
+from datetime import datetime
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from typing import List, Tuple
@@ -95,6 +98,60 @@ def send_alert_email(config: Config, domains_to_alert: List[Tuple[DomainInfo, st
 
     except Exception as e:
         logger.error(f"Failed to send alert email: {e}")
+        return False
+
+
+def generate_json_report(domains_to_alert: List[Tuple[DomainInfo, str]]) -> dict:
+    """Generate JSON report data for domains that need attention."""
+    report_data = {
+        "timestamp": datetime.utcnow().isoformat(),
+        "alert_count": len(domains_to_alert),
+        "domains": []
+    }
+    
+    for domain_info, reason in domains_to_alert:
+        domain_data = {
+            "domain": domain_info.domain,
+            "url": f"https://{domain_info.domain}/",
+            "alert_reason": reason,
+            "expiration_date": domain_info.expiration_date.isoformat() if domain_info.expiration_date else None,
+            "days_until_expiration": domain_info.days_until_expiration,
+            "status": domain_info.status,
+            "nameservers": domain_info.nameservers,
+            "is_expired": domain_info.is_expired,
+            "has_concerning_status": domain_info.has_concerning_status,
+            "nameservers_changed": domain_info.nameservers_changed,
+            "added_nameservers": domain_info.added_nameservers,
+            "removed_nameservers": domain_info.removed_nameservers,
+            "error": domain_info.error
+        }
+        report_data["domains"].append(domain_data)
+    
+    return report_data
+
+
+def save_json_report(config: Config, domains_to_alert: List[Tuple[DomainInfo, str]]) -> bool:
+    """Save JSON report to file if web display is enabled."""
+    if not config.is_web_display_enabled():
+        return True  # Skip if web display is disabled
+    
+    try:
+        web_config = config.data.get('web_display', {})
+        json_path = web_config.get('json_path', 'web/data.json')
+        
+        # Ensure directory exists
+        os.makedirs(os.path.dirname(json_path), exist_ok=True)
+        
+        # Generate and save JSON report
+        report_data = generate_json_report(domains_to_alert)
+        with open(json_path, 'w') as f:
+            json.dump(report_data, f, indent=2)
+        
+        logger.info(f"JSON report saved to {json_path}")
+        return True
+        
+    except Exception as e:
+        logger.error(f"Failed to save JSON report: {e}")
         return False
 
 

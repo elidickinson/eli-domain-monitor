@@ -64,3 +64,14 @@ email:
   
   # Email subject prefix
   subject_prefix: '[Domain Monitor]'
+
+# Web display configuration
+web_display:
+  # Enable/disable web display generation
+  enabled: false
+  
+  # Path to save JSON data file (relative to project root)
+  json_path: web/data.json
+  
+  # Path to HTML display file (relative to project root)
+  html_path: web/index.html

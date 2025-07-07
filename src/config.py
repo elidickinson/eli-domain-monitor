@@ -58,6 +58,11 @@ class Config:
                     'www': False
                 },
                 'alert_on_nameserver_changes': True
+            },
+            'web_display': {
+                'enabled': False,
+                'json_path': 'web/data.json',
+                'html_path': 'web/index.html'
             }
         }
         self.load()
@@ -154,3 +159,7 @@ class Config:
     def should_alert_on_www_changes(self) -> bool:
         """Check if alerts should be sent for www subdomain resolution changes."""
         return self.data['alert_conditions']['alert_on_resolution_changes']['www']
+    
+    def is_web_display_enabled(self) -> bool:
+        """Check if web display is enabled."""
+        return self.data['web_display']['enabled']
