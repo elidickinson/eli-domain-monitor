@@ -54,26 +54,43 @@ def test_domain_info_initialization():
     "google.com",
     "github.com"
 ])
-def test_check_domain_returns_data(domain, test_config):
+def test_check_domain_returns_data(domain, test_config, monkeypatch):
     """Test that check_domain returns data for all expected fields."""
-    import whois
-    import dns.resolver
 
-    # First, let's do direct queries to check the raw data
-    print(f"\nDirect WHOIS check for {domain}:")
-    w = whois.whois(domain)
-    print(f"Raw nameservers from WHOIS: {w.nameservers}")
+    # Mock the whois and dns resolver calls to avoid network dependencies
+    class MockWhois:
+        def __init__(self, domain):
+            self.domain = domain
+            self.nameservers = ["ns1.example.com", "ns2.example.com"]
+            self.expiration_date = datetime.now().replace(year=datetime.now().year + 1)
+            self.status = ["clientTransferProhibited", "serverDeleteProhibited"]
 
-    print(f"\nDirect DNS check for {domain}:")
-    try:
-        ns_records = dns.resolver.resolve(domain, 'NS')
-        ns_names = [ns.to_text().rstrip('.') for ns in ns_records]
-        print(f"Raw nameservers from DNS: {ns_names}")
-    except Exception as e:
-        print(f"DNS lookup failed: {e}")
+    def mock_whois(domain):
+        return MockWhois(domain)
+
+    class MockNSRecord:
+        def __init__(self, ns_name):
+            self.ns_name = ns_name
+
+        def to_text(self):
+            return self.ns_name + '.'
+
+    class MockDNSResolver:
+        def resolve(self, domain, record_type):
+            if record_type == 'NS':
+                return [MockNSRecord("ns1.example.com"), MockNSRecord("ns2.example.com")]
+            elif record_type == 'A':
+                class MockARecord:
+                    def __str__(self):
+                        return "1.2.3.4"
+                return [MockARecord()]
+            return []
+
+    monkeypatch.setattr("src.domain_checker.whois.whois", mock_whois)
+    monkeypatch.setattr("src.domain_checker.dns.resolver", MockDNSResolver())
 
     # Now run through our function
-    info = check_domain(domain, test_config)
+    info = check_domain(domain, test_config, force_check=True)
 
     # Print diagnostic info
     print(f"\nDomain info for {domain}:")
