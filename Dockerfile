@@ -17,7 +17,7 @@ COPY pyproject.toml uv.lock README.md ./
 RUN uv sync --frozen
 
 # Copy application code
-COPY domain_monitor.py main.py .
+COPY domain_monitor.py .
 COPY src/ ./src/
 COPY utils/ ./utils/
 
