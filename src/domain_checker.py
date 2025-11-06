@@ -105,6 +105,9 @@ def check_domain(domain: str, config: Config, force_check: bool = False) -> Doma
         try:
             # Get WHOIS information
             w = whois.whois(domain)
+            
+            # Debug logging for problematic domains
+            logger.debug(f"WHOIS object for {domain}: {vars(w)}")
 
             # Extract expiration date
             exp_date = w.expiration_date
@@ -124,11 +127,10 @@ def check_domain(domain: str, config: Config, force_check: bool = False) -> Doma
             if exp_date:
                 # Convert timezone-aware expiration date to UTC for consistent comparison
                 if exp_date.tzinfo:
-                    exp_date = exp_date.utctimetuple()
-                    exp_date = datetime.datetime(*exp_date[:6])
+                    exp_date = exp_date.astimezone(datetime.UTC).replace(tzinfo=None)
                 
                 info.expiration_date = exp_date
-                now = datetime.datetime.utcnow()
+                now = datetime.datetime.now(datetime.UTC).replace(tzinfo=None)
                 info.days_until_expiration = (exp_date - now).days
                 info.is_expired = info.days_until_expiration <= 0
 
@@ -148,11 +150,13 @@ def check_domain(domain: str, config: Config, force_check: bool = False) -> Doma
                 )
 
             # Try to get nameservers from WHOIS data
-            if w.nameservers:
+            if w.nameservers is not None:
                 if isinstance(w.nameservers, list):
                     info.nameservers = [ns.rstrip('.') for ns in w.nameservers]
-                else:
+                elif isinstance(w.nameservers, str):
                     info.nameservers = [w.nameservers.rstrip('.')]
+                else:
+                    logger.warning(f"Unexpected nameserver type for {domain}: {type(w.nameservers)}")
 
             # If nameservers are not available from WHOIS, use DNS lookup
             if not info.nameservers:

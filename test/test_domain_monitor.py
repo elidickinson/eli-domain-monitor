@@ -8,6 +8,7 @@ import os
 import pytest
 import tempfile
 from datetime import datetime, timezone
+import datetime as dt
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.domain_checker import check_domain, needs_alert
@@ -173,7 +174,7 @@ def test_nameserver_change_detection_in_check_domain(test_config, monkeypatch):
         def __init__(self, domain):
             self.domain = domain
             self.nameservers = ["ns1.example.com", "ns2.example.com"]
-            self.expiration_date = datetime.utcnow().replace(year=datetime.utcnow().year + 1)
+            self.expiration_date = dt.datetime.now(dt.UTC).replace(tzinfo=None, year=dt.datetime.now(dt.UTC).year + 1)
             self.status = "clientTransferProhibited"
 
     def mock_whois(domain):
@@ -215,7 +216,7 @@ def test_domain_whois_caching(test_config, monkeypatch):
         def __init__(self, domain):
             self.domain = domain
             self.nameservers = ["ns1.example.com", "ns2.example.com"]
-            self.expiration_date = datetime.utcnow().replace(year=datetime.utcnow().year + 1)
+            self.expiration_date = dt.datetime.now(dt.UTC).replace(tzinfo=None, year=dt.datetime.now(dt.UTC).year + 1)
             self.status = "clientTransferProhibited"
 
     def mock_whois(domain):
@@ -258,7 +259,7 @@ def test_domain_whois_cache_expiry(test_config, monkeypatch):
         def __init__(self, domain):
             self.domain = domain
             self.nameservers = ["ns1.example.com", "ns2.example.com"]
-            self.expiration_date = datetime.utcnow().replace(year=datetime.utcnow().year + 1)
+            self.expiration_date = dt.datetime.now(dt.UTC).replace(tzinfo=None, year=dt.datetime.now(dt.UTC).year + 1)
             self.status = "clientTransferProhibited"
 
     whois_call_count = 0
@@ -289,7 +290,7 @@ def test_database_domain_whois_storage():
         db = DatabaseManager(db_file.name)
 
         domain = "testdomain.com"
-        exp_date = datetime.utcnow().replace(year=datetime.utcnow().year + 1)
+        exp_date = dt.datetime.now(dt.UTC).replace(tzinfo=None, year=dt.datetime.now(dt.UTC).year + 1)
         status = ["clientTransferProhibited", "serverDeleteProhibited"]
 
         # Test initial storage
@@ -475,11 +476,11 @@ def test_utc_expiration_calculation():
     import datetime
     from unittest.mock import patch
     
-    # Mock datetime.utcnow to return a known UTC time
+    # Mock datetime.now to return a known UTC time
     fixed_utc_now = datetime.datetime(2025, 6, 1, 12, 0, 0)
     
     with patch('src.domain_checker.datetime') as mock_datetime:
-        mock_datetime.datetime.utcnow.return_value = fixed_utc_now
+        mock_datetime.datetime.now.return_value = fixed_utc_now
         mock_datetime.datetime.side_effect = datetime.datetime
         
         # Create domain info with UTC expiration date
@@ -510,11 +511,11 @@ def test_database_utc_timestamps():
     with tempfile.NamedTemporaryFile(suffix='.db') as db_file:
         db = DatabaseManager(db_file.name)
         
-        # Mock datetime.utcnow to return a known UTC time
+        # Mock datetime.now to return a known UTC time
         fixed_utc_now = datetime.datetime(2025, 6, 1, 12, 0, 0)
         
         with patch('src.database.datetime') as mock_datetime:
-            mock_datetime.datetime.utcnow.return_value = fixed_utc_now
+            mock_datetime.datetime.now.return_value = fixed_utc_now
             mock_datetime.datetime.side_effect = datetime.datetime
             
             # Test nameserver update uses UTC

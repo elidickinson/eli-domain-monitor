@@ -158,7 +158,7 @@ class DatabaseManager:
 
         conn = self._get_connection()
         cursor = conn.cursor()
-        now = datetime.datetime.utcnow().isoformat()
+        now = datetime.datetime.now(datetime.UTC).isoformat()
 
         try:
             # Mark all previous nameservers as inactive
@@ -209,7 +209,7 @@ class DatabaseManager:
         """Update the last_seen timestamp for nameservers."""
         conn = self._get_connection()
         cursor = conn.cursor()
-        now = datetime.datetime.utcnow().isoformat()
+        now = datetime.datetime.now(datetime.UTC).isoformat()
 
         try:
             for ns in nameservers:
@@ -264,11 +264,11 @@ class DatabaseManager:
         last_checked = datetime.datetime.fromisoformat(result['last_checked'])
         cache_expiry = last_checked + datetime.timedelta(hours=cache_hours)
 
-        # Ensure consistent timezone handling - use naive datetimes for cache comparison
-        now = datetime.datetime.utcnow()
-        if last_checked.tzinfo is not None:
-            # Convert timezone-aware last_checked to naive UTC
-            last_checked = last_checked.replace(tzinfo=None)
+        # Ensure consistent timezone handling - use timezone-aware datetimes for comparison
+        now = datetime.datetime.now(datetime.UTC)
+        if last_checked.tzinfo is None:
+            # Convert naive last_checked to timezone-aware UTC
+            last_checked = last_checked.replace(tzinfo=datetime.UTC)
             cache_expiry = last_checked + datetime.timedelta(hours=cache_hours)
 
         return now >= cache_expiry
@@ -315,7 +315,7 @@ class DatabaseManager:
         """
         conn = self._get_connection()
         cursor = conn.cursor()
-        now = datetime.datetime.utcnow().isoformat()
+        now = datetime.datetime.now(datetime.UTC).isoformat()
 
         # Get previous data
         previous_data = self.get_cached_domain_info(domain)
@@ -462,7 +462,7 @@ class DatabaseManager:
 
         conn = self._get_connection()
         cursor = conn.cursor()
-        now = datetime.datetime.utcnow().isoformat()
+        now = datetime.datetime.now(datetime.UTC).isoformat()
 
         try:
             # Mark all previous IPs as inactive
@@ -519,7 +519,7 @@ class DatabaseManager:
         """Update the last_checked timestamp for domain resolution."""
         conn = self._get_connection()
         cursor = conn.cursor()
-        now = datetime.datetime.utcnow().isoformat()
+        now = datetime.datetime.now(datetime.UTC).isoformat()
 
         try:
             for ip in ips:
