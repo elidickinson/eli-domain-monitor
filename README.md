@@ -52,9 +52,18 @@ git clone https://github.com/elidickinson/eli-domain-monitor.git
 cd eli-domain-monitor
 ```
 
-2. Install required packages:
+2. Install required packages using uv (recommended):
 ```
-pip install -r requirements.txt
+# Install uv if you don't have it
+pip install uv
+
+# Install project dependencies
+uv sync
+```
+
+Or using pip:
+```
+pip install -e .
 ```
 
 ## Project Structure
@@ -74,7 +83,9 @@ The project has been organized into a modular structure for better maintainabili
 │   └── test_domain_monitor.py
 ├── config.yaml.example     # Example configuration
 ├── domains.txt.example     # Example domains list
-└── requirements.txt        # Python dependencies
+├── pyproject.toml          # Project configuration and dependencies
+├── uv.lock                 # Locked dependency versions
+└── .python-version         # Python version specification
 ```
 
 3. Create a configuration file:
@@ -96,31 +107,31 @@ The simplest way to use the tool is to:
 2. Run the check command with no parameters:
 
 ```
-python domain_monitor.py check
+uv run python domain_monitor.py check
 ```
 
 You can also override or specify domains in other ways:
 
 Check a single domain:
 ```
-python domain_monitor.py check --domain example.com
+uv run python domain_monitor.py check --domain example.com
 ```
 
 Check domains from a specific file (overrides config setting):
 ```
-python domain_monitor.py check --file domains.txt
+uv run python domain_monitor.py check --file domains.txt
 ```
 
 ### Test Email Configuration
 
 To verify that your SMTP configuration works properly:
 ```
-python domain_monitor.py test-email
+uv run python domain_monitor.py test-email
 ```
 
 You can also send to a specific email address:
 ```
-python domain_monitor.py test-email --recipient user@example.com
+uv run python domain_monitor.py test-email --recipient user@example.com
 ```
 
 ### Configuration
@@ -189,7 +200,7 @@ Add the script to your crontab to run automatically:
 
 ```
 # Run domain check daily at 2 AM
-0 2 * * * cd /path/to/domain-monitor && python domain_monitor.py check --quiet >> /var/log/domain-monitor.log 2>&1
+0 2 * * * cd /path/to/domain-monitor && uv run python domain_monitor.py check --quiet >> /var/log/domain-monitor.log 2>&1
 ```
 
 ### With Docker
@@ -198,7 +209,7 @@ For Docker deployments, create a cron job that runs the container:
 
 ```
 # Run domain check daily at 2 AM using Docker
-0 2 * * * docker run -v /path/to/config.yaml:/app/config.yaml -v /path/to/domains.txt:/app/domains.txt -v /path/to/domain_monitor.db:/app/domain_monitor.db ghcr.io/elidickinson/eli-domain-monitor:latest python domain_monitor.py check --quiet >> /var/log/domain-monitor.log 2>&1
+0 2 * * * docker run -v /path/to/config.yaml:/app/config.yaml -v /path/to/domains.txt:/app/domains.txt -v /path/to/domain_monitor.db:/app/domain_monitor.db ghcr.io/elidickinson/eli-domain-monitor:latest uv run python domain_monitor.py check --quiet >> /var/log/domain-monitor.log 2>&1
 ```
 
 ## Alert Conditions
@@ -254,7 +265,7 @@ The script tracks nameserver changes over time using an SQLite database:
 You can view the nameserver history for a domain:
 
 ```
-python domain_monitor.py ns-history example.com
+uv run python domain_monitor.py ns-history example.com
 ```
 
 Options:
@@ -284,14 +295,14 @@ The script includes protection against WHOIS rate limiting:
 ### Running Tests
 
 ```bash
-# Run all tests
-pytest test/
+# Run all tests using uv
+uv run pytest test/
 
 # Run specific test
-pytest test/test_domain_monitor.py::test_domain_info_initialization -v
+uv run pytest test/test_domain_monitor.py::test_domain_info_initialization -v
 
 # Run tests with coverage
-pytest --cov=src test/
+uv run pytest --cov=src test/
 ```
 
 ### Code Structure
