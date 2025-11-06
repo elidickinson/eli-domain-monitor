@@ -1,4 +1,4 @@
-FROM python:3.11-slim
+FROM python:3.12-slim
 
 # Set working directory
 WORKDIR /app
@@ -9,12 +9,15 @@ RUN apt-get update && apt-get install -y \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements first for better caching
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Install uv for faster dependency installation
+RUN pip install uv
+
+# Copy pyproject.toml and README first for better caching
+COPY pyproject.toml uv.lock README.md ./
+RUN uv sync --frozen
 
 # Copy application code
-COPY domain_monitor.py .
+COPY domain_monitor.py main.py .
 COPY src/ ./src/
 COPY utils/ ./utils/
 
@@ -28,4 +31,4 @@ COPY config.yaml.example .
 ENV PYTHONUNBUFFERED=1
 
 # Default command - show help
-CMD ["python", "domain_monitor.py", "--help"]
+CMD ["uv", "run", "python", "domain_monitor.py", "--help"]

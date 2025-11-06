@@ -37,7 +37,6 @@ config.yaml
 *.log
 
 # Documentation
-README.md
 CLAUDE.md
 
 # Scripts
