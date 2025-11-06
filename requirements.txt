@@ -1,6 +1,0 @@
-click>=8.1.3
-python-whois>=0.8.0
-dnspython>=2.3.0
-pyyaml>=6.0
-rich>=13.3.5
-# SQLite is part of Python's standard library
