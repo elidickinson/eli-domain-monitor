@@ -3,8 +3,9 @@
 import os
 import logging
 import yaml
-from typing import List
+from typing import List, Optional
 from .database import DatabaseManager
+from .domain_extractor import extract_domain
 
 # Configure logging
 logger = logging.getLogger('domain_monitor.config')
@@ -90,7 +91,7 @@ class Config:
         except Exception as e:
             logger.error(f"Failed to load config: {e}")
     
-    def get_domains(self, domains_file: str = None) -> List[str]:
+    def get_domains(self, domains_file: Optional[str] = None) -> List[str]:
         """Get domains from domains file."""
         domains = []
         seen_domains = set()
@@ -103,17 +104,23 @@ class Config:
             return domains
             
         # Read domains from file if it exists
-        if os.path.exists(domains_file):
+        if domains_file and os.path.exists(domains_file):
             try:
                 with open(domains_file, 'r') as f:
                     for line_num, line in enumerate(f, 1):
-                        domain = line.strip().lower()  # Normalize to lowercase
-                        if domain and not domain.startswith('#'):
-                            if domain in seen_domains:
-                                logger.info(f"Skipping duplicate domain '{domain}' on line {line_num} in {domains_file}")
+                        line = line.strip()
+                        if line and not line.startswith('#'):
+                            # Extract domain from URL or use as-is if already a domain
+                            extracted_domain = extract_domain(line)
+                            if extracted_domain:
+                                domain = extracted_domain.lower()  # Normalize to lowercase
+                                if domain in seen_domains:
+                                    logger.info(f"Skipping duplicate domain '{domain}' on line {line_num} in {domains_file}")
+                                else:
+                                    seen_domains.add(domain)
+                                    domains.append(domain)
                             else:
-                                seen_domains.add(domain)
-                                domains.append(domain)
+                                logger.warning(f"Could not extract domain from '{line}' on line {line_num} in {domains_file}")
             except Exception as e:
                 logger.error(f"Failed to read domains file {domains_file}: {e}")
         else:

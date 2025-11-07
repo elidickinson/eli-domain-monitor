@@ -16,6 +16,7 @@ from src.config import Config, DEFAULT_CONFIG_PATH
 from src.domain_checker import check_domain, needs_alert
 from src.email_sender import send_alert_email, send_test_email, print_alert_report
 from src.database import DatabaseManager
+from src.domain_extractor import extract_domain
 
 # Configure logging
 logging.basicConfig(
@@ -70,14 +71,25 @@ def check_domains(domain, file, config, alert_days, quiet, send_email, delay, db
 
     # Add single domain if specified
     if domain:
-        domains_to_check.append(domain)
+        extracted_domain = extract_domain(domain)
+        if extracted_domain:
+            domains_to_check.append(extracted_domain)
+        else:
+            logger.error(f"Could not extract domain from '{domain}'")
+            return 1
 
     # Add domains from file if specified
     if file:
         try:
             with open(file, 'r') as f:
-                file_domains = [line.strip() for line in f if line.strip() and not line.startswith('#')]
-                domains_to_check.extend(file_domains)
+                for line in f:
+                    line = line.strip()
+                    if line and not line.startswith('#'):
+                        extracted_domain = extract_domain(line)
+                        if extracted_domain:
+                            domains_to_check.append(extracted_domain)
+                        else:
+                            logger.warning(f"Could not extract domain from '{line}' in {file}")
         except Exception as e:
             logger.error(f"Failed to read domains file {file}: {e}")
 

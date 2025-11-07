@@ -6,3 +6,5 @@ __pycache__
 commit.txt
 domains.txt
 .aider.*
+/domain_monitor.db
+/config.yaml
