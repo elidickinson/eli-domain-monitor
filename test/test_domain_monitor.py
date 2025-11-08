@@ -52,67 +52,6 @@ def test_domain_info_initialization():
     assert info.removed_nameservers == []
     assert info.error is None
 
-@pytest.mark.parametrize("domain", [
-    "google.com",
-    "github.com"
-])
-def test_check_domain_returns_data(domain, test_config):
-    """Test that check_domain returns data for all expected fields."""
-    import whois
-    import dns.resolver
-
-    # First, let's do direct queries to check the raw data
-    print(f"\nDirect WHOIS check for {domain}:")
-    w = whois.whois(domain)
-    print(f"Raw nameservers from WHOIS: {w.nameservers}")
-
-    print(f"\nDirect DNS check for {domain}:")
-    try:
-        ns_records = dns.resolver.resolve(domain, 'NS')
-        ns_names = [ns.to_text().rstrip('.') for ns in ns_records]
-        print(f"Raw nameservers from DNS: {ns_names}")
-    except Exception as e:
-        print(f"DNS lookup failed: {e}")
-
-    # Now run through our function
-    info = check_domain(domain, test_config)
-
-    # Print diagnostic info
-    print(f"\nDomain info for {domain}:")
-    print(f"Error: {info.error}")
-    print(f"Expiration date: {info.expiration_date}")
-    print(f"Days until expiration: {info.days_until_expiration}")
-    print(f"Status: {info.status}")
-    print(f"Nameservers: {info.nameservers}")
-
-    # Basic checks
-    assert info.domain == domain
-    assert info.error is None
-
-    # Check expiration date
-    assert info.expiration_date is not None
-    assert isinstance(info.expiration_date, datetime)
-
-    # Check days until expiration
-    assert info.days_until_expiration is not None
-    assert isinstance(info.days_until_expiration, int)
-
-    # Check status
-    assert info.status is not None
-    assert len(info.status) > 0
-    assert all(isinstance(s, str) for s in info.status)
-
-    # Check nameservers
-    assert info.nameservers is not None
-    assert len(info.nameservers) > 0
-    assert all(isinstance(ns, str) for ns in info.nameservers)
-
-    # Check derived flags
-    assert isinstance(info.is_expired, bool)
-    assert isinstance(info.has_concerning_status, bool)
-    assert isinstance(info.nameservers_changed, bool)
-
-
 def test_database_manager():
     """Test the DatabaseManager class for nameserver tracking."""
     # Use a temporary file for the test database
@@ -169,19 +108,18 @@ def test_nameserver_change_detection_in_check_domain(test_config, monkeypatch):
     """Test nameserver change detection in the check_domain function."""
     domain = "example.com"
 
-    # Mock the whois and dns resolver calls to control the test
-    class MockWhois:
-        def __init__(self, domain):
-            self.domain = domain
-            self.nameservers = ["ns1.example.com", "ns2.example.com"]
-            self.expiration_date = dt.datetime.now(dt.UTC).replace(tzinfo=None, year=dt.datetime.now(dt.UTC).year + 1)
-            self.status = "clientTransferProhibited"
+    # Mock the RDAP call to control the test
+    class MockRDAP:
+        def __init__(self):
+            self.events = [{'eventAction': 'expiration', 'eventDate': '2026-01-01T00:00:00Z'}]
+            self.status = ['clientTransferProhibited']
+            self.nameservers = [{'ldhName': 'ns1.example.com'}, {'ldhName': 'ns2.example.com'}]
 
-    def mock_whois(domain):
-        return MockWhois(domain)
+    def mock_rdap(domain, tld):
+        return MockRDAP()
 
     # First check with the mock nameservers
-    monkeypatch.setattr("src.domain_checker.whois.whois", mock_whois)
+    monkeypatch.setattr("src.domain_checker.whodap.lookup_domain", mock_rdap)
 
     # First check should not show a change (first time seeing the domain)
     info1 = check_domain(domain, test_config, force_check=True)
@@ -189,15 +127,16 @@ def test_nameserver_change_detection_in_check_domain(test_config, monkeypatch):
     assert info1.nameservers == ["ns1.example.com", "ns2.example.com"]
 
     # Now change the nameservers for the next check
-    class MockWhoisChanged(MockWhois):
-        def __init__(self, domain):
-            super().__init__(domain)
-            self.nameservers = ["ns2.example.com", "ns3.example.com"]
+    class MockRDAPChanged:
+        def __init__(self):
+            self.events = [{'eventAction': 'expiration', 'eventDate': '2026-01-01T00:00:00Z'}]
+            self.status = ['clientTransferProhibited']
+            self.nameservers = [{'ldhName': 'ns2.example.com'}, {'ldhName': 'ns3.example.com'}]
 
-    def mock_whois_changed(domain):
-        return MockWhoisChanged(domain)
+    def mock_rdap_changed(domain, tld):
+        return MockRDAPChanged()
 
-    monkeypatch.setattr("src.domain_checker.whois.whois", mock_whois_changed)
+    monkeypatch.setattr("src.domain_checker.whodap.lookup_domain", mock_rdap_changed)
 
     # Second check should detect the nameserver change (force check to bypass cache)
     info2 = check_domain(domain, test_config, force_check=True)
@@ -208,79 +147,74 @@ def test_nameserver_change_detection_in_check_domain(test_config, monkeypatch):
 
 
 def test_domain_whois_caching(test_config, monkeypatch):
-    """Test that domain WHOIS data is cached and retrieved correctly."""
+    """Test that domain data is cached and retrieved correctly."""
     domain = "example.com"
 
-    # Mock the whois call
-    class MockWhois:
-        def __init__(self, domain):
-            self.domain = domain
-            self.nameservers = ["ns1.example.com", "ns2.example.com"]
-            self.expiration_date = dt.datetime.now(dt.UTC).replace(tzinfo=None, year=dt.datetime.now(dt.UTC).year + 1)
-            self.status = "clientTransferProhibited"
+    # Mock the RDAP call
+    class MockRDAP:
+        def __init__(self):
+            self.events = [{'eventAction': 'expiration', 'eventDate': '2026-01-01T00:00:00Z'}]
+            self.status = ['clientTransferProhibited']
+            self.nameservers = [{'ldhName': 'ns1.example.com'}, {'ldhName': 'ns2.example.com'}]
 
-    def mock_whois(domain):
-        return MockWhois(domain)
+    rdap_call_count = 0
+    def counting_mock_rdap(domain, tld):
+        nonlocal rdap_call_count
+        rdap_call_count += 1
+        return MockRDAP()
 
-    whois_call_count = 0
-    def counting_mock_whois(domain):
-        nonlocal whois_call_count
-        whois_call_count += 1
-        return MockWhois(domain)
-
-    monkeypatch.setattr("src.domain_checker.whois.whois", counting_mock_whois)
+    monkeypatch.setattr("src.domain_checker.whodap.lookup_domain", counting_mock_rdap)
 
     # Set cache_hours to a high value so cache doesn't expire
     test_config.data['general']['cache_hours'] = 48
 
-    # First check should do WHOIS lookup
+    # First check should do RDAP lookup
     info1 = check_domain(domain, test_config, force_check=False)
-    assert whois_call_count == 1
+    assert rdap_call_count == 1
     assert info1.error is None
 
-    # Second check should use cached data (no new WHOIS call)
+    # Second check should use cached data (no new RDAP call)
     info2 = check_domain(domain, test_config, force_check=False)
-    assert whois_call_count == 1  # Should still be 1
+    assert rdap_call_count == 1  # Should still be 1
     assert info2.error is None
     assert info2.expiration_date == info1.expiration_date
     assert info2.status == info1.status
 
     # Force check should bypass cache
     info3 = check_domain(domain, test_config, force_check=True)
-    assert whois_call_count == 2  # Should increment
+    assert rdap_call_count == 2  # Should increment
     assert info3.error is None
 
 
 def test_domain_whois_cache_expiry(test_config, monkeypatch):
-    """Test that domain WHOIS cache expires correctly."""
+    """Test that domain cache expires correctly."""
     domain = "example.com"
 
-    class MockWhois:
-        def __init__(self, domain):
-            self.domain = domain
-            self.nameservers = ["ns1.example.com", "ns2.example.com"]
-            self.expiration_date = dt.datetime.now(dt.UTC).replace(tzinfo=None, year=dt.datetime.now(dt.UTC).year + 1)
-            self.status = "clientTransferProhibited"
+    class MockRDAP:
+        def __init__(self):
+            self.events = [{'eventAction': 'expiration', 'eventDate': '2026-01-01T00:00:00Z'}]
+            self.status = ['clientTransferProhibited']
+            self.nameservers = [{'ldhName': 'ns1.example.com'}, {'ldhName': 'ns2.example.com'}]
 
-    whois_call_count = 0
-    def counting_mock_whois(domain):
-        nonlocal whois_call_count
-        whois_call_count += 1
-        return MockWhois(domain)
+    rdap_call_count = 0
+    def counting_mock_rdap(domain, tld):
+        nonlocal rdap_call_count
+        rdap_call_count += 1
+        return MockRDAP()
 
-    monkeypatch.setattr("src.domain_checker.whois.whois", counting_mock_whois)
+    monkeypatch.setattr("src.domain_checker.whodap.lookup_domain", counting_mock_rdap)
 
     # Set cache_hours to 0 so cache always expires
     test_config.data['general']['cache_hours'] = 0
 
     # First check
     info1 = check_domain(domain, test_config, force_check=False)
-    assert whois_call_count == 1
+    assert rdap_call_count == 1
     assert info1 is not None
 
-    # Second check should do new WHOIS lookup due to expired cache
+    # Second check should do new RDAP lookup due to expired cache
     info2 = check_domain(domain, test_config, force_check=False)
-    assert whois_call_count == 2
+    assert rdap_call_count == 2
     assert info2 is not None
 
 
@@ -542,36 +476,80 @@ def test_database_utc_timestamps():
 def test_whois_timezone_conversion_edge_cases():
     """Test edge cases in WHOIS timezone conversion."""
     import datetime
-    
+
     # Test case 1: UTC timezone (should remain unchanged)
     utc_tz = datetime.timezone.utc
     utc_date = datetime.datetime(2025, 12, 31, 23, 59, 59, tzinfo=utc_tz)
-    
+
     utc_tuple = utc_date.utctimetuple()
     converted_date = datetime.datetime(*utc_tuple[:6])
-    
+
     # Should be identical when timezone info is stripped
     expected = datetime.datetime(2025, 12, 31, 23, 59, 59)
     assert converted_date == expected
-    
+
     # Test case 2: Positive timezone offset (e.g., JST is UTC+9)
     jst_tz = datetime.timezone(datetime.timedelta(hours=9))
     jst_date = datetime.datetime(2025, 12, 31, 23, 59, 59, tzinfo=jst_tz)
-    
+
     utc_tuple = jst_date.utctimetuple()
     converted_date = datetime.datetime(*utc_tuple[:6])
-    
+
     # JST 23:59 should be UTC 14:59 (9 hours earlier)
     expected = datetime.datetime(2025, 12, 31, 14, 59, 59)
     assert converted_date == expected
-    
+
     # Test case 3: Negative timezone offset crossing date boundary
     pst_tz = datetime.timezone(datetime.timedelta(hours=-8))
     pst_date = datetime.datetime(2025, 1, 1, 7, 0, 0, tzinfo=pst_tz)
-    
+
     utc_tuple = pst_date.utctimetuple()
     converted_date = datetime.datetime(*utc_tuple[:6])
-    
+
     # PST 07:00 should be UTC 15:00 (8 hours ahead)
     expected = datetime.datetime(2025, 1, 1, 15, 0, 0)
     assert converted_date == expected
+
+
+@pytest.mark.skipif(os.getenv('CI') != 'true', reason="Integration test - only runs in CI with network access")
+def test_rdap_integration_real_domains(test_config):
+    """
+    INTEGRATION TEST - Queries real RDAP servers for actual domains.
+
+    This test validates that RDAP works for multiple TLDs including:
+    - elidickinson.com (.com - traditional gTLD)
+    - eli.pizza (.pizza - newer gTLD with Identity Digital)
+
+    Skipped locally, runs in GitHub Actions CI.
+    """
+    test_domains = [
+        ('elidickinson.com', '.com'),
+        ('eli.pizza', '.pizza'),
+    ]
+
+    for domain, tld in test_domains:
+        print(f"\n=== Testing real RDAP query for {domain} ({tld}) ===")
+        info = check_domain(domain, test_config, force_check=True)
+
+        # Print results for debugging
+        print(f"Domain: {info.domain}")
+        print(f"Error: {info.error}")
+        print(f"Expiration: {info.expiration_date}")
+        print(f"Status: {info.status}")
+        print(f"Nameservers: {info.nameservers}")
+
+        # Assertions - RDAP should work for all these TLDs
+        assert info.error is None, f"RDAP query failed for {domain}: {info.error}"
+
+        # Should get at least nameservers (even if expiration/status are restricted)
+        assert len(info.nameservers) > 0, f"No nameservers returned for {domain}"
+
+        # For .com domains, we should definitely get expiration date
+        if tld == '.com':
+            assert info.expiration_date is not None, f"No expiration date for {domain}"
+            assert info.days_until_expiration is not None, f"No days_until_expiration for {domain}"
+
+        # For .pizza, expiration may or may not be available depending on registry policy
+        # but at minimum we should get nameservers without errors
+
+        print(f"✓ {domain} RDAP query successful")

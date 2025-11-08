@@ -4,7 +4,7 @@ import datetime
 import time
 import logging
 import random
-import whois
+import whodap
 import dns.resolver
 from typing import Tuple, List
 from .domain_info import DomainInfo
@@ -99,77 +99,65 @@ def check_domain(domain: str, config: Config, force_check: bool = False) -> Doma
 
             return info
 
-    logger.info(f"Performing WHOIS lookup for {domain}")
+    logger.info(f"Performing RDAP lookup for {domain}")
+
+    # Extract TLD from domain
+    domain_parts = domain.split('.')
+    tld = domain_parts[-1] if len(domain_parts) > 1 else domain
 
     for attempt in range(max_retries):
         try:
-            # Get WHOIS information
-            w = whois.whois(domain)
-            
-            # Debug logging for problematic domains
-            logger.debug(f"WHOIS object for {domain}: {vars(w)}")
+            rdap_result = whodap.lookup_domain(domain, tld)
 
-            # Extract expiration date
-            exp_date = w.expiration_date
-            if isinstance(exp_date, list):
-                # Handle mixed timezone-aware and naive datetimes in list, convert all to UTC
-                normalized_dates = []
-                for date in exp_date:
-                    if date.tzinfo:
-                        # Convert timezone-aware to UTC
-                        utc_tuple = date.utctimetuple()
-                        normalized_dates.append(datetime.datetime(*utc_tuple[:6]))
-                    else:
-                        # Assume naive datetime is already UTC
-                        normalized_dates.append(date)
-                exp_date = min(normalized_dates)  # Use earliest date if multiple
+            # Extract expiration date from RDAP
+            if hasattr(rdap_result, 'events'):
+                for event in rdap_result.events:
+                    if event.get('eventAction') == 'expiration':
+                        exp_date_str = event.get('eventDate')
+                        if exp_date_str:
+                            # Parse ISO 8601 datetime
+                            exp_date = datetime.datetime.fromisoformat(exp_date_str.replace('Z', '+00:00'))
+                            # Convert to UTC naive
+                            if exp_date.tzinfo:
+                                exp_date = exp_date.astimezone(datetime.UTC).replace(tzinfo=None)
+                            info.expiration_date = exp_date
+                            now = datetime.datetime.now(datetime.UTC).replace(tzinfo=None)
+                            info.days_until_expiration = (exp_date - now).days
+                            info.is_expired = info.days_until_expiration <= 0
+                            break
 
-            if exp_date:
-                # Convert timezone-aware expiration date to UTC for consistent comparison
-                if exp_date.tzinfo:
-                    exp_date = exp_date.astimezone(datetime.UTC).replace(tzinfo=None)
-                
-                info.expiration_date = exp_date
-                now = datetime.datetime.now(datetime.UTC).replace(tzinfo=None)
-                info.days_until_expiration = (exp_date - now).days
-                info.is_expired = info.days_until_expiration <= 0
+            # Extract status from RDAP
+            if hasattr(rdap_result, 'status'):
+                info.status = rdap_result.status if isinstance(rdap_result.status, list) else [rdap_result.status]
 
-            # Extract status
-            status = w.status
-            if status:
-                if isinstance(status, list):
-                    info.status = [s.strip() for s in status]
-                else:
-                    info.status = [s.strip() for s in status.split()]
-
-                # Check for concerning statuses from config
+                # Check for concerning statuses
                 concerning_statuses = {s.lower() for s in config.get_concerning_statuses()}
                 info.has_concerning_status = any(
                     any(concerning in s.lower() for concerning in concerning_statuses)
                     for s in info.status
                 )
 
-            # Try to get nameservers from WHOIS data
-            if w.nameservers is not None:
-                if isinstance(w.nameservers, list):
-                    info.nameservers = [ns.rstrip('.') for ns in w.nameservers]
-                elif isinstance(w.nameservers, str):
-                    info.nameservers = [w.nameservers.rstrip('.')]
-                else:
-                    logger.warning(f"Unexpected nameserver type for {domain}: {type(w.nameservers)}")
+            # Extract nameservers from RDAP
+            if hasattr(rdap_result, 'nameservers'):
+                nameservers = []
+                for ns in rdap_result.nameservers:
+                    if isinstance(ns, dict) and 'ldhName' in ns:
+                        nameservers.append(ns['ldhName'].rstrip('.'))
+                    elif isinstance(ns, str):
+                        nameservers.append(ns.rstrip('.'))
+                if nameservers:
+                    info.nameservers = nameservers
 
-            # If nameservers are not available from WHOIS, use DNS lookup
+            # If nameservers not from RDAP, try DNS
             if not info.nameservers:
                 try:
                     ns_records = dns.resolver.resolve(domain, 'NS')
                     info.nameservers = [ns.target.to_text().rstrip('.') for ns in ns_records]
                 except Exception as dns_err:
                     logger.warning(f"Failed to get nameservers for {domain} via DNS: {dns_err}")
-                    # Don't set error here as we still have other useful info
 
             # Check for nameserver changes if we have nameservers
             if info.nameservers:
-                # Track nameserver changes in the database
                 changed, added, removed = config.db.update_nameservers(domain, info.nameservers)
                 if changed:
                     info.nameservers_changed = True
@@ -181,19 +169,21 @@ def check_domain(domain: str, config: Config, force_check: bool = False) -> Doma
                     if removed:
                         logger.warning(f"  Removed: {', '.join(removed)}")
 
-            # Store domain WHOIS data in database
-            whois_changed, whois_changes = config.db.update_domain_whois(
+            # Store domain data in database
+            changed, changes = config.db.update_domain_whois(
                 domain, info.expiration_date, info.status, info.has_concerning_status,
                 info.is_expired, info.days_until_expiration, info.error
             )
 
-            if whois_changed:
-                logger.info(f"Domain WHOIS changes detected for {domain}: {whois_changes}")
+            if changed:
+                logger.info(f"Domain changes detected for {domain}: {changes}")
 
             # Check resolution for apex and www domains
             _check_resolution_changes(domain, info, config)
 
-            # Success, exit the retry loop
+            logger.info(f"Successfully retrieved data for {domain} via RDAP")
+
+            # Success, exit retry loop
             break
 
         except Exception as e:

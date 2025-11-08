@@ -7,6 +7,10 @@ A CLI tool to monitor domains for expiration dates, status changes, and nameserv
 - Check domain expiration dates
 - Monitor domain status (e.g., redemptionPeriod, pendingDelete)
 - Display nameserver information
+- **Broad TLD support** - including newer gTLDs like .pizza, .info, .news, etc.
+  - Uses RDAP (Registration Data Access Protocol) - the official replacement for WHOIS as of Jan 28, 2025
+  - RDAP provides public data (expiration, status, nameservers) for all gTLDs
+  - Falls back to DNS queries for nameservers when needed
 - Track nameserver changes over time using SQLite database
 - Get alerts when nameservers change
 - Send email alerts for domains requiring attention
