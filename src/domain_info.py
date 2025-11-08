@@ -37,7 +37,7 @@ class DomainInfo:
 
         # Check if this is a subdomain (simple check for more than 2 parts)
         is_subdomain = len(self.domain.split('.')) > 2
-        
+
         if is_subdomain:
             # For subdomains, we only show resolution info
             resolution_parts = []
@@ -45,7 +45,7 @@ class DomainInfo:
                 resolution_parts.append(f"resolves to: {', '.join(self.apex_ips)}")
             else:
                 resolution_parts.append("resolves to: none")
-            
+
             # Change notifications for subdomains
             change_parts = []
             if self.apex_changed:
@@ -56,9 +56,9 @@ class DomainInfo:
                     change_parts.append('; '.join(change_sub_parts))
                 else:
                     change_parts.append("RESOLUTION CHANGED")
-            
+
             change_str = f" [{'; '.join(change_parts)}]" if change_parts else ""
-            
+
             return f"{self.domain} (subdomain): {'; '.join(resolution_parts)}{change_str}"
 
         # Handle case where expiration_date might be None
