@@ -4,7 +4,7 @@ import datetime
 import time
 import logging
 import random
-import whois
+import whoisit
 import dns.resolver
 from typing import Tuple, List
 from .domain_info import DomainInfo
@@ -43,10 +43,15 @@ def check_domain(domain: str, config: Config, force_check: bool = False) -> Doma
     """Check a domain for expiration date, status, and nameservers with rate limiting."""
     info = DomainInfo(domain)
 
+    # Ensure whoisit is bootstrapped
+    if not whoisit.is_bootstrapped():
+        logger.info("Bootstrapping whoisit RDAP service")
+        whoisit.bootstrap()
+
     # Check if this is a subdomain
     if is_subdomain(domain):
         logger.info(f"Detected subdomain: {domain}, skipping WHOIS lookup")
-        
+
         # For subdomains, we only check DNS resolution
         # Treat the full subdomain as the "apex" for resolution purposes
         subdomain_ips, subdomain_nxdomain = _check_domain_resolution(domain, '')
@@ -54,7 +59,7 @@ def check_domain(domain: str, config: Config, force_check: bool = False) -> Doma
         if subdomain_nxdomain:
             info.domain_not_exist = True
             logger.warning(f"Subdomain {domain} does not exist (NXDOMAIN)")
-        
+
         # Track resolution changes for the subdomain
         changed, added, removed, became_nxdomain = config.db.update_domain_resolution(
             domain, '', subdomain_ips, subdomain_nxdomain
@@ -70,7 +75,7 @@ def check_domain(domain: str, config: Config, force_check: bool = False) -> Doma
                 logger.warning(f"  Removed IPs: {', '.join(removed)}")
             if became_nxdomain:
                 logger.warning(f"  Subdomain became NXDOMAIN")
-        
+
         # Skip the rest of the WHOIS/nameserver checking
         return info
 
@@ -103,44 +108,28 @@ def check_domain(domain: str, config: Config, force_check: bool = False) -> Doma
 
     for attempt in range(max_retries):
         try:
-            # Get WHOIS information
-            w = whois.whois(domain)
-            
+            # Get WHOIS information using whoisit
+            w = whoisit.domain(domain)
+
             # Debug logging for problematic domains
-            logger.debug(f"WHOIS object for {domain}: {vars(w)}")
+            logger.debug(f"WHOIS object for {domain}: {w}")
 
             # Extract expiration date
-            exp_date = w.expiration_date
-            if isinstance(exp_date, list):
-                # Handle mixed timezone-aware and naive datetimes in list, convert all to UTC
-                normalized_dates = []
-                for date in exp_date:
-                    if date.tzinfo:
-                        # Convert timezone-aware to UTC
-                        utc_tuple = date.utctimetuple()
-                        normalized_dates.append(datetime.datetime(*utc_tuple[:6]))
-                    else:
-                        # Assume naive datetime is already UTC
-                        normalized_dates.append(date)
-                exp_date = min(normalized_dates)  # Use earliest date if multiple
-
+            exp_date = w.get('expiration_date')
             if exp_date:
                 # Convert timezone-aware expiration date to UTC for consistent comparison
                 if exp_date.tzinfo:
                     exp_date = exp_date.astimezone(datetime.UTC).replace(tzinfo=None)
-                
+
                 info.expiration_date = exp_date
                 now = datetime.datetime.now(datetime.UTC).replace(tzinfo=None)
                 info.days_until_expiration = (exp_date - now).days
                 info.is_expired = info.days_until_expiration <= 0
 
             # Extract status
-            status = w.status
+            status = w.get('status')
             if status:
-                if isinstance(status, list):
-                    info.status = [s.strip() for s in status]
-                else:
-                    info.status = [s.strip() for s in status.split()]
+                info.status = [s.strip() for s in status]
 
                 # Check for concerning statuses from config
                 concerning_statuses = {s.lower() for s in config.get_concerning_statuses()}
@@ -150,13 +139,14 @@ def check_domain(domain: str, config: Config, force_check: bool = False) -> Doma
                 )
 
             # Try to get nameservers from WHOIS data
-            if w.nameservers is not None:
-                if isinstance(w.nameservers, list):
-                    info.nameservers = [ns.rstrip('.') for ns in w.nameservers]
-                elif isinstance(w.nameservers, str):
-                    info.nameservers = [w.nameservers.rstrip('.')]
+            nameservers = w.get('nameservers')
+            if nameservers is not None:
+                if isinstance(nameservers, list):
+                    info.nameservers = [ns.rstrip('.') for ns in nameservers]
+                elif isinstance(nameservers, str):
+                    info.nameservers = [nameservers.rstrip('.')]
                 else:
-                    logger.warning(f"Unexpected nameserver type for {domain}: {type(w.nameservers)}")
+                    logger.warning(f"Unexpected nameserver type for {domain}: {type(nameservers)}")
 
             # If nameservers are not available from WHOIS, use DNS lookup
             if not info.nameservers:
@@ -320,13 +310,13 @@ def needs_alert(domain_info: DomainInfo, config: Config) -> Tuple[bool, str]:
         return True, f"Error checking domain: {domain_info.error}"
 
     reasons = []
-    
+
     # For subdomains, we only care about resolution changes and NXDOMAIN
     if is_subdomain(domain_info.domain):
         # Check if subdomain doesn't exist
         if domain_info.domain_not_exist:
             reasons.append("Subdomain does not exist (NXDOMAIN)")
-        
+
         # Check for resolution changes (only if configured)
         if config.should_alert_on_apex_changes() and domain_info.apex_changed:
             changes = []
@@ -334,14 +324,14 @@ def needs_alert(domain_info: DomainInfo, config: Config) -> Tuple[bool, str]:
                 changes.append(f"added: {', '.join(domain_info.apex_added_ips)}")
             if domain_info.apex_removed_ips:
                 changes.append(f"removed: {', '.join(domain_info.apex_removed_ips)}")
-            
+
             if changes:
                 reasons.append(f"Resolution changes detected ({'; '.join(changes)})")
             else:
                 reasons.append("Resolution changes detected")
-        
+
         return bool(reasons), ", ".join(reasons)
-    
+
     # Regular domain alert logic continues below
     alert_threshold = config.get_alert_days()
 
