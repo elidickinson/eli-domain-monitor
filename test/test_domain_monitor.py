@@ -108,19 +108,18 @@ def test_nameserver_change_detection_in_check_domain(test_config, monkeypatch):
     """Test nameserver change detection in the check_domain function."""
     domain = "example.com"
 
-    # Mock the whois and dns resolver calls to control the test
-    class MockWhois:
-        def __init__(self, domain):
-            self.domain = domain
-            self.name_servers = ["ns1.example.com", "ns2.example.com"]
-            self.expiration_date = dt.datetime.now(dt.UTC).replace(tzinfo=None, year=dt.datetime.now(dt.UTC).year + 1)
-            self.status = "clientTransferProhibited"
+    # Mock the RDAP call to control the test
+    class MockRDAP:
+        def __init__(self):
+            self.events = [{'eventAction': 'expiration', 'eventDate': '2026-01-01T00:00:00Z'}]
+            self.status = ['clientTransferProhibited']
+            self.nameservers = [{'ldhName': 'ns1.example.com'}, {'ldhName': 'ns2.example.com'}]
 
-    def mock_whois(domain):
-        return MockWhois(domain)
+    def mock_rdap(domain):
+        return MockRDAP()
 
     # First check with the mock nameservers
-    monkeypatch.setattr("src.domain_checker.whois.query", mock_whois)
+    monkeypatch.setattr("src.domain_checker.whodap.lookup_domain", mock_rdap)
 
     # First check should not show a change (first time seeing the domain)
     info1 = check_domain(domain, test_config, force_check=True)
@@ -128,15 +127,16 @@ def test_nameserver_change_detection_in_check_domain(test_config, monkeypatch):
     assert info1.nameservers == ["ns1.example.com", "ns2.example.com"]
 
     # Now change the nameservers for the next check
-    class MockWhoisChanged(MockWhois):
-        def __init__(self, domain):
-            super().__init__(domain)
-            self.name_servers = ["ns2.example.com", "ns3.example.com"]
+    class MockRDAPChanged:
+        def __init__(self):
+            self.events = [{'eventAction': 'expiration', 'eventDate': '2026-01-01T00:00:00Z'}]
+            self.status = ['clientTransferProhibited']
+            self.nameservers = [{'ldhName': 'ns2.example.com'}, {'ldhName': 'ns3.example.com'}]
 
-    def mock_whois_changed(domain):
-        return MockWhoisChanged(domain)
+    def mock_rdap_changed(domain):
+        return MockRDAPChanged()
 
-    monkeypatch.setattr("src.domain_checker.whois.query", mock_whois_changed)
+    monkeypatch.setattr("src.domain_checker.whodap.lookup_domain", mock_rdap_changed)
 
     # Second check should detect the nameserver change (force check to bypass cache)
     info2 = check_domain(domain, test_config, force_check=True)
@@ -147,79 +147,74 @@ def test_nameserver_change_detection_in_check_domain(test_config, monkeypatch):
 
 
 def test_domain_whois_caching(test_config, monkeypatch):
-    """Test that domain WHOIS data is cached and retrieved correctly."""
+    """Test that domain data is cached and retrieved correctly."""
     domain = "example.com"
 
-    # Mock the whois call
-    class MockWhois:
-        def __init__(self, domain):
-            self.domain = domain
-            self.name_servers = ["ns1.example.com", "ns2.example.com"]
-            self.expiration_date = dt.datetime.now(dt.UTC).replace(tzinfo=None, year=dt.datetime.now(dt.UTC).year + 1)
-            self.status = "clientTransferProhibited"
+    # Mock the RDAP call
+    class MockRDAP:
+        def __init__(self):
+            self.events = [{'eventAction': 'expiration', 'eventDate': '2026-01-01T00:00:00Z'}]
+            self.status = ['clientTransferProhibited']
+            self.nameservers = [{'ldhName': 'ns1.example.com'}, {'ldhName': 'ns2.example.com'}]
 
-    def mock_whois(domain):
-        return MockWhois(domain)
+    rdap_call_count = 0
+    def counting_mock_rdap(domain):
+        nonlocal rdap_call_count
+        rdap_call_count += 1
+        return MockRDAP()
 
-    whois_call_count = 0
-    def counting_mock_whois(domain):
-        nonlocal whois_call_count
-        whois_call_count += 1
-        return MockWhois(domain)
-
-    monkeypatch.setattr("src.domain_checker.whois.query", counting_mock_whois)
+    monkeypatch.setattr("src.domain_checker.whodap.lookup_domain", counting_mock_rdap)
 
     # Set cache_hours to a high value so cache doesn't expire
     test_config.data['general']['cache_hours'] = 48
 
-    # First check should do WHOIS lookup
+    # First check should do RDAP lookup
     info1 = check_domain(domain, test_config, force_check=False)
-    assert whois_call_count == 1
+    assert rdap_call_count == 1
     assert info1.error is None
 
-    # Second check should use cached data (no new WHOIS call)
+    # Second check should use cached data (no new RDAP call)
     info2 = check_domain(domain, test_config, force_check=False)
-    assert whois_call_count == 1  # Should still be 1
+    assert rdap_call_count == 1  # Should still be 1
     assert info2.error is None
     assert info2.expiration_date == info1.expiration_date
     assert info2.status == info1.status
 
     # Force check should bypass cache
     info3 = check_domain(domain, test_config, force_check=True)
-    assert whois_call_count == 2  # Should increment
+    assert rdap_call_count == 2  # Should increment
     assert info3.error is None
 
 
 def test_domain_whois_cache_expiry(test_config, monkeypatch):
-    """Test that domain WHOIS cache expires correctly."""
+    """Test that domain cache expires correctly."""
     domain = "example.com"
 
-    class MockWhois:
-        def __init__(self, domain):
-            self.domain = domain
-            self.name_servers = ["ns1.example.com", "ns2.example.com"]
-            self.expiration_date = dt.datetime.now(dt.UTC).replace(tzinfo=None, year=dt.datetime.now(dt.UTC).year + 1)
-            self.status = "clientTransferProhibited"
+    class MockRDAP:
+        def __init__(self):
+            self.events = [{'eventAction': 'expiration', 'eventDate': '2026-01-01T00:00:00Z'}]
+            self.status = ['clientTransferProhibited']
+            self.nameservers = [{'ldhName': 'ns1.example.com'}, {'ldhName': 'ns2.example.com'}]
 
-    whois_call_count = 0
-    def counting_mock_whois(domain):
-        nonlocal whois_call_count
-        whois_call_count += 1
-        return MockWhois(domain)
+    rdap_call_count = 0
+    def counting_mock_rdap(domain):
+        nonlocal rdap_call_count
+        rdap_call_count += 1
+        return MockRDAP()
 
-    monkeypatch.setattr("src.domain_checker.whois.query", counting_mock_whois)
+    monkeypatch.setattr("src.domain_checker.whodap.lookup_domain", counting_mock_rdap)
 
     # Set cache_hours to 0 so cache always expires
     test_config.data['general']['cache_hours'] = 0
 
     # First check
     info1 = check_domain(domain, test_config, force_check=False)
-    assert whois_call_count == 1
+    assert rdap_call_count == 1
     assert info1 is not None
 
-    # Second check should do new WHOIS lookup due to expired cache
+    # Second check should do new RDAP lookup due to expired cache
     info2 = check_domain(domain, test_config, force_check=False)
-    assert whois_call_count == 2
+    assert rdap_call_count == 2
     assert info2 is not None
 
 
