@@ -509,3 +509,47 @@ def test_whois_timezone_conversion_edge_cases():
     # PST 07:00 should be UTC 15:00 (8 hours ahead)
     expected = datetime.datetime(2025, 1, 1, 15, 0, 0)
     assert converted_date == expected
+
+
+@pytest.mark.skipif(os.getenv('CI') != 'true', reason="Integration test - only runs in CI with network access")
+def test_rdap_integration_real_domains(test_config):
+    """
+    INTEGRATION TEST - Queries real RDAP servers for actual domains.
+
+    This test validates that RDAP works for multiple TLDs including:
+    - elidickinson.com (.com - traditional gTLD)
+    - eli.pizza (.pizza - newer gTLD with Identity Digital)
+
+    Skipped locally, runs in GitHub Actions CI.
+    """
+    test_domains = [
+        ('elidickinson.com', '.com'),
+        ('eli.pizza', '.pizza'),
+    ]
+
+    for domain, tld in test_domains:
+        print(f"\n=== Testing real RDAP query for {domain} ({tld}) ===")
+        info = check_domain(domain, test_config, force_check=True)
+
+        # Print results for debugging
+        print(f"Domain: {info.domain}")
+        print(f"Error: {info.error}")
+        print(f"Expiration: {info.expiration_date}")
+        print(f"Status: {info.status}")
+        print(f"Nameservers: {info.nameservers}")
+
+        # Assertions - RDAP should work for all these TLDs
+        assert info.error is None, f"RDAP query failed for {domain}: {info.error}"
+
+        # Should get at least nameservers (even if expiration/status are restricted)
+        assert len(info.nameservers) > 0, f"No nameservers returned for {domain}"
+
+        # For .com domains, we should definitely get expiration date
+        if tld == '.com':
+            assert info.expiration_date is not None, f"No expiration date for {domain}"
+            assert info.days_until_expiration is not None, f"No days_until_expiration for {domain}"
+
+        # For .pizza, expiration may or may not be available depending on registry policy
+        # but at minimum we should get nameservers without errors
+
+        print(f"✓ {domain} RDAP query successful")
