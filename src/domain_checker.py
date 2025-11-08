@@ -4,7 +4,7 @@ import datetime
 import time
 import logging
 import random
-import whois
+import whoisdomain as whois
 import dns.resolver
 from typing import Tuple, List
 from .domain_info import DomainInfo
@@ -103,11 +103,15 @@ def check_domain(domain: str, config: Config, force_check: bool = False) -> Doma
 
     for attempt in range(max_retries):
         try:
-            # Get WHOIS information
-            w = whois.whois(domain)
-            
+            # Get WHOIS information using whoisdomain
+            w = whois.query(domain)
+
             # Debug logging for problematic domains
-            logger.debug(f"WHOIS object for {domain}: {vars(w)}")
+            logger.debug(f"WHOIS object for {domain}: {vars(w) if w else 'None'}")
+
+            # Handle case where query returns None (domain doesn't exist or unsupported TLD)
+            if w is None:
+                raise Exception("Whois query returned no data - domain may not exist or TLD is unsupported")
 
             # Extract expiration date
             exp_date = w.expiration_date
@@ -150,13 +154,15 @@ def check_domain(domain: str, config: Config, force_check: bool = False) -> Doma
                 )
 
             # Try to get nameservers from WHOIS data
-            if w.nameservers is not None:
-                if isinstance(w.nameservers, list):
-                    info.nameservers = [ns.rstrip('.') for ns in w.nameservers]
-                elif isinstance(w.nameservers, str):
-                    info.nameservers = [w.nameservers.rstrip('.')]
+            # Note: whoisdomain uses 'name_servers' attribute
+            nameservers_attr = getattr(w, 'name_servers', None) or getattr(w, 'nameservers', None)
+            if nameservers_attr is not None:
+                if isinstance(nameservers_attr, list):
+                    info.nameservers = [ns.rstrip('.') for ns in nameservers_attr if ns]
+                elif isinstance(nameservers_attr, str):
+                    info.nameservers = [nameservers_attr.rstrip('.')]
                 else:
-                    logger.warning(f"Unexpected nameserver type for {domain}: {type(w.nameservers)}")
+                    logger.warning(f"Unexpected nameserver type for {domain}: {type(nameservers_attr)}")
 
             # If nameservers are not available from WHOIS, use DNS lookup
             if not info.nameservers:

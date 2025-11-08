@@ -58,13 +58,14 @@ def test_domain_info_initialization():
 ])
 def test_check_domain_returns_data(domain, test_config):
     """Test that check_domain returns data for all expected fields."""
-    import whois
+    import whoisdomain as whois
     import dns.resolver
 
     # First, let's do direct queries to check the raw data
     print(f"\nDirect WHOIS check for {domain}:")
-    w = whois.whois(domain)
-    print(f"Raw nameservers from WHOIS: {w.nameservers}")
+    w = whois.query(domain)
+    nameservers_attr = getattr(w, 'name_servers', None) or getattr(w, 'nameservers', None) if w else None
+    print(f"Raw nameservers from WHOIS: {nameservers_attr}")
 
     print(f"\nDirect DNS check for {domain}:")
     try:
@@ -173,7 +174,7 @@ def test_nameserver_change_detection_in_check_domain(test_config, monkeypatch):
     class MockWhois:
         def __init__(self, domain):
             self.domain = domain
-            self.nameservers = ["ns1.example.com", "ns2.example.com"]
+            self.name_servers = ["ns1.example.com", "ns2.example.com"]
             self.expiration_date = dt.datetime.now(dt.UTC).replace(tzinfo=None, year=dt.datetime.now(dt.UTC).year + 1)
             self.status = "clientTransferProhibited"
 
@@ -181,7 +182,7 @@ def test_nameserver_change_detection_in_check_domain(test_config, monkeypatch):
         return MockWhois(domain)
 
     # First check with the mock nameservers
-    monkeypatch.setattr("src.domain_checker.whois.whois", mock_whois)
+    monkeypatch.setattr("src.domain_checker.whois.query", mock_whois)
 
     # First check should not show a change (first time seeing the domain)
     info1 = check_domain(domain, test_config, force_check=True)
@@ -192,12 +193,12 @@ def test_nameserver_change_detection_in_check_domain(test_config, monkeypatch):
     class MockWhoisChanged(MockWhois):
         def __init__(self, domain):
             super().__init__(domain)
-            self.nameservers = ["ns2.example.com", "ns3.example.com"]
+            self.name_servers = ["ns2.example.com", "ns3.example.com"]
 
     def mock_whois_changed(domain):
         return MockWhoisChanged(domain)
 
-    monkeypatch.setattr("src.domain_checker.whois.whois", mock_whois_changed)
+    monkeypatch.setattr("src.domain_checker.whois.query", mock_whois_changed)
 
     # Second check should detect the nameserver change (force check to bypass cache)
     info2 = check_domain(domain, test_config, force_check=True)
@@ -215,7 +216,7 @@ def test_domain_whois_caching(test_config, monkeypatch):
     class MockWhois:
         def __init__(self, domain):
             self.domain = domain
-            self.nameservers = ["ns1.example.com", "ns2.example.com"]
+            self.name_servers = ["ns1.example.com", "ns2.example.com"]
             self.expiration_date = dt.datetime.now(dt.UTC).replace(tzinfo=None, year=dt.datetime.now(dt.UTC).year + 1)
             self.status = "clientTransferProhibited"
 
@@ -228,7 +229,7 @@ def test_domain_whois_caching(test_config, monkeypatch):
         whois_call_count += 1
         return MockWhois(domain)
 
-    monkeypatch.setattr("src.domain_checker.whois.whois", counting_mock_whois)
+    monkeypatch.setattr("src.domain_checker.whois.query", counting_mock_whois)
 
     # Set cache_hours to a high value so cache doesn't expire
     test_config.data['general']['cache_hours'] = 48
@@ -258,7 +259,7 @@ def test_domain_whois_cache_expiry(test_config, monkeypatch):
     class MockWhois:
         def __init__(self, domain):
             self.domain = domain
-            self.nameservers = ["ns1.example.com", "ns2.example.com"]
+            self.name_servers = ["ns1.example.com", "ns2.example.com"]
             self.expiration_date = dt.datetime.now(dt.UTC).replace(tzinfo=None, year=dt.datetime.now(dt.UTC).year + 1)
             self.status = "clientTransferProhibited"
 
@@ -268,7 +269,7 @@ def test_domain_whois_cache_expiry(test_config, monkeypatch):
         whois_call_count += 1
         return MockWhois(domain)
 
-    monkeypatch.setattr("src.domain_checker.whois.whois", counting_mock_whois)
+    monkeypatch.setattr("src.domain_checker.whois.query", counting_mock_whois)
 
     # Set cache_hours to 0 so cache always expires
     test_config.data['general']['cache_hours'] = 0
@@ -542,36 +543,105 @@ def test_database_utc_timestamps():
 def test_whois_timezone_conversion_edge_cases():
     """Test edge cases in WHOIS timezone conversion."""
     import datetime
-    
+
     # Test case 1: UTC timezone (should remain unchanged)
     utc_tz = datetime.timezone.utc
     utc_date = datetime.datetime(2025, 12, 31, 23, 59, 59, tzinfo=utc_tz)
-    
+
     utc_tuple = utc_date.utctimetuple()
     converted_date = datetime.datetime(*utc_tuple[:6])
-    
+
     # Should be identical when timezone info is stripped
     expected = datetime.datetime(2025, 12, 31, 23, 59, 59)
     assert converted_date == expected
-    
+
     # Test case 2: Positive timezone offset (e.g., JST is UTC+9)
     jst_tz = datetime.timezone(datetime.timedelta(hours=9))
     jst_date = datetime.datetime(2025, 12, 31, 23, 59, 59, tzinfo=jst_tz)
-    
+
     utc_tuple = jst_date.utctimetuple()
     converted_date = datetime.datetime(*utc_tuple[:6])
-    
+
     # JST 23:59 should be UTC 14:59 (9 hours earlier)
     expected = datetime.datetime(2025, 12, 31, 14, 59, 59)
     assert converted_date == expected
-    
+
     # Test case 3: Negative timezone offset crossing date boundary
     pst_tz = datetime.timezone(datetime.timedelta(hours=-8))
     pst_date = datetime.datetime(2025, 1, 1, 7, 0, 0, tzinfo=pst_tz)
-    
+
     utc_tuple = pst_date.utctimetuple()
     converted_date = datetime.datetime(*utc_tuple[:6])
-    
+
     # PST 07:00 should be UTC 15:00 (8 hours ahead)
     expected = datetime.datetime(2025, 1, 1, 15, 0, 0)
     assert converted_date == expected
+
+
+@pytest.mark.parametrize("domain", [
+    "eli.pizza"
+])
+def test_check_domain_pizza_tld(domain, test_config):
+    """
+    Test that check_domain works with .pizza TLD domains.
+    This test initially fails with 'Whois command returned no output' error
+    before the fix is applied.
+    """
+    info = check_domain(domain, test_config, force_check=True)
+
+    # Print diagnostic info
+    print(f"\nDomain info for {domain}:")
+    print(f"Error: {info.error}")
+    print(f"Expiration date: {info.expiration_date}")
+    print(f"Days until expiration: {info.days_until_expiration}")
+    print(f"Status: {info.status}")
+    print(f"Nameservers: {info.nameservers}")
+
+    # Basic checks
+    assert info.domain == domain
+
+    # This should NOT have an error after the fix
+    assert info.error is None, f"WHOIS lookup failed with error: {info.error}"
+
+    # Check that we got some data
+    assert info.expiration_date is not None or len(info.nameservers) > 0, \
+        "Should have either expiration date or nameservers"
+
+
+@pytest.mark.parametrize("domain", [
+    "elidickinson.com"
+])
+def test_check_domain_com_tld(domain, test_config):
+    """
+    Test that check_domain works with .com TLD domains.
+    This should pass even before the fix as .com is well-supported.
+    """
+    info = check_domain(domain, test_config, force_check=True)
+
+    # Print diagnostic info
+    print(f"\nDomain info for {domain}:")
+    print(f"Error: {info.error}")
+    print(f"Expiration date: {info.expiration_date}")
+    print(f"Days until expiration: {info.days_until_expiration}")
+    print(f"Status: {info.status}")
+    print(f"Nameservers: {info.nameservers}")
+
+    # Basic checks
+    assert info.domain == domain
+    assert info.error is None, f"WHOIS lookup failed with error: {info.error}"
+
+    # Check expiration date
+    assert info.expiration_date is not None
+    assert isinstance(info.expiration_date, datetime)
+
+    # Check days until expiration
+    assert info.days_until_expiration is not None
+    assert isinstance(info.days_until_expiration, int)
+
+    # Check status
+    assert info.status is not None
+    assert len(info.status) > 0
+
+    # Check nameservers
+    assert info.nameservers is not None
+    assert len(info.nameservers) > 0
