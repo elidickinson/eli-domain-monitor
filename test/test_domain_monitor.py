@@ -115,7 +115,7 @@ def test_nameserver_change_detection_in_check_domain(test_config, monkeypatch):
             self.status = ['clientTransferProhibited']
             self.nameservers = [{'ldhName': 'ns1.example.com'}, {'ldhName': 'ns2.example.com'}]
 
-    def mock_rdap(domain):
+    def mock_rdap(domain, tld):
         return MockRDAP()
 
     # First check with the mock nameservers
@@ -133,7 +133,7 @@ def test_nameserver_change_detection_in_check_domain(test_config, monkeypatch):
             self.status = ['clientTransferProhibited']
             self.nameservers = [{'ldhName': 'ns2.example.com'}, {'ldhName': 'ns3.example.com'}]
 
-    def mock_rdap_changed(domain):
+    def mock_rdap_changed(domain, tld):
         return MockRDAPChanged()
 
     monkeypatch.setattr("src.domain_checker.whodap.lookup_domain", mock_rdap_changed)
@@ -158,7 +158,7 @@ def test_domain_whois_caching(test_config, monkeypatch):
             self.nameservers = [{'ldhName': 'ns1.example.com'}, {'ldhName': 'ns2.example.com'}]
 
     rdap_call_count = 0
-    def counting_mock_rdap(domain):
+    def counting_mock_rdap(domain, tld):
         nonlocal rdap_call_count
         rdap_call_count += 1
         return MockRDAP()
@@ -197,7 +197,7 @@ def test_domain_whois_cache_expiry(test_config, monkeypatch):
             self.nameservers = [{'ldhName': 'ns1.example.com'}, {'ldhName': 'ns2.example.com'}]
 
     rdap_call_count = 0
-    def counting_mock_rdap(domain):
+    def counting_mock_rdap(domain, tld):
         nonlocal rdap_call_count
         rdap_call_count += 1
         return MockRDAP()

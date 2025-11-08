@@ -101,9 +101,13 @@ def check_domain(domain: str, config: Config, force_check: bool = False) -> Doma
 
     logger.info(f"Performing RDAP lookup for {domain}")
 
+    # Extract TLD from domain
+    domain_parts = domain.split('.')
+    tld = domain_parts[-1] if len(domain_parts) > 1 else domain
+
     for attempt in range(max_retries):
         try:
-            rdap_result = whodap.lookup_domain(domain)
+            rdap_result = whodap.lookup_domain(domain, tld)
 
             # Extract expiration date from RDAP
             if hasattr(rdap_result, 'events'):
