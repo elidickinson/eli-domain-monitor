@@ -7,6 +7,7 @@ requires-python = ">=3.12"
 dependencies = [
     "click>=8.1.3",
     "whoisdomain>=1.20250929.1",
+    "whodap>=0.1.13",
     "dnspython>=2.3.0",
     "pyyaml>=6.0",
     "rich>=13.3.5",

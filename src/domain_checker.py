@@ -5,6 +5,7 @@ import time
 import logging
 import random
 import whoisdomain as whois
+import whodap
 import dns.resolver
 from typing import Tuple, List
 from .domain_info import DomainInfo
@@ -212,9 +213,60 @@ def check_domain(domain: str, config: Config, force_check: bool = False) -> Doma
                 logger.warning(f"Rate limit detected for {domain}, backing off for {backoff_time:.2f}s (attempt {attempt+1}/{max_retries})")
                 time.sleep(backoff_time)
             else:
+                # WHOIS failed, try RDAP as fallback
+                logger.warning(f"WHOIS failed for {domain}: {e}")
+                logger.info(f"Attempting RDAP lookup for {domain}")
+
+                try:
+                    rdap_result = whodap.lookup_domain(domain)
+
+                    # Extract expiration date from RDAP
+                    if hasattr(rdap_result, 'events'):
+                        for event in rdap_result.events:
+                            if event.get('eventAction') == 'expiration':
+                                exp_date_str = event.get('eventDate')
+                                if exp_date_str:
+                                    # Parse ISO 8601 datetime
+                                    exp_date = datetime.datetime.fromisoformat(exp_date_str.replace('Z', '+00:00'))
+                                    # Convert to UTC naive
+                                    if exp_date.tzinfo:
+                                        exp_date = exp_date.astimezone(datetime.UTC).replace(tzinfo=None)
+                                    info.expiration_date = exp_date
+                                    now = datetime.datetime.now(datetime.UTC).replace(tzinfo=None)
+                                    info.days_until_expiration = (exp_date - now).days
+                                    info.is_expired = info.days_until_expiration <= 0
+                                    break
+
+                    # Extract status from RDAP
+                    if hasattr(rdap_result, 'status'):
+                        info.status = rdap_result.status if isinstance(rdap_result.status, list) else [rdap_result.status]
+
+                        # Check for concerning statuses
+                        concerning_statuses = {s.lower() for s in config.get_concerning_statuses()}
+                        info.has_concerning_status = any(
+                            any(concerning in s.lower() for concerning in concerning_statuses)
+                            for s in info.status
+                        )
+
+                    # Extract nameservers from RDAP
+                    if hasattr(rdap_result, 'nameservers'):
+                        nameservers = []
+                        for ns in rdap_result.nameservers:
+                            if isinstance(ns, dict) and 'ldhName' in ns:
+                                nameservers.append(ns['ldhName'].rstrip('.'))
+                            elif isinstance(ns, str):
+                                nameservers.append(ns.rstrip('.'))
+                        if nameservers:
+                            info.nameservers = nameservers
+
+                    logger.info(f"Successfully retrieved data for {domain} via RDAP")
+
+                except Exception as rdap_error:
+                    logger.error(f"RDAP lookup also failed for {domain}: {rdap_error}")
+                    info.error = f"WHOIS failed: {e}. RDAP failed: {rdap_error}"
+                    break
+
                 # Not a rate limiting error or final attempt
-                info.error = str(e)
-                logger.error(f"Error checking domain {domain}: {e}")
                 break
 
     # Store error result in database if we have an error
