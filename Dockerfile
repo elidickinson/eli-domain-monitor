@@ -19,7 +19,6 @@ RUN uv sync --frozen
 # Copy application code
 COPY domain_monitor.py .
 COPY src/ ./src/
-COPY utils/ ./utils/
 
 # Create directories for logs and data
 RUN mkdir -p /app/logs /app/data
