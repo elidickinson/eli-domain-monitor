@@ -8,6 +8,9 @@ A CLI tool to monitor domains for expiration dates, status changes, and nameserv
 - Monitor domain status (e.g., redemptionPeriod, pendingDelete)
 - Display nameserver information
 - **Broad TLD support** - including newer gTLDs like .pizza, .info, .news, etc. via IANA database auto-detection
+  - Note: Some newer gTLDs have restricted WHOIS access requiring authentication (e.g., Identity Digital's layered access)
+  - Uses `whoisdomain` library which supports all IANA-registered TLDs
+  - Falls back to DNS queries for nameservers when WHOIS data is unavailable
 - Track nameserver changes over time using SQLite database
 - Get alerts when nameservers change
 - Send email alerts for domains requiring attention
