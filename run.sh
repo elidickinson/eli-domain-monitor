@@ -8,11 +8,14 @@ fi
 
 echo "=== $(date) ===" >> logs/domain-monitor.log
 
+# Set default limit, allow override via environment variable
+DOMAIN_LIMIT=${DOMAIN_LIMIT:-50}
+
 # Show output on screen if running interactively, log to file if running from cron
 if [ -t 1 ]; then
     # Interactive - show on screen and log to file
-    uv run python domain_monitor.py check 2>&1 | tee -a logs/domain-monitor.log
+    uv run python domain_monitor.py check --limit "$DOMAIN_LIMIT" 2>&1 | tee -a logs/domain-monitor.log
 else
     # Non-interactive (cron) - log to file only
-    uv run python domain_monitor.py check >> logs/domain-monitor.log 2>&1
+    uv run python domain_monitor.py check --limit "$DOMAIN_LIMIT" >> logs/domain-monitor.log 2>&1
 fi

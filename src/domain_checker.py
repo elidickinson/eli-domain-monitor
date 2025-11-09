@@ -39,14 +39,14 @@ DEFAULT_CONCERNING_STATUSES = {
 }
 
 
-def check_domain(domain: str, config: Config, force_check: bool = False) -> DomainInfo:
+def check_domain(domain: str, config: Config, should_refresh: bool = False) -> DomainInfo:
     """Check a domain for expiration date, status, and nameservers with rate limiting."""
     info = DomainInfo(domain)
 
     # Ensure whoisit is bootstrapped
     if not whoisit.is_bootstrapped():
         logger.info("Bootstrapping whoisit RDAP service")
-        whoisit.bootstrap()
+        whoisit.bootstrap(overrides=True)
 
     # Check if this is a subdomain
     if is_subdomain(domain):
@@ -85,8 +85,8 @@ def check_domain(domain: str, config: Config, force_check: bool = False) -> Doma
     max_retries = config.data['general']['max_retries']
     cache_hours = config.data['general'].get('cache_hours', 24)
 
-    # Check if we should use cached data (unless force_check is True)
-    if not force_check and not config.db.should_check_domain(domain, cache_hours):
+    # Check if we should use cached data (unless should_refresh is True)
+    if not should_refresh and not config.db.should_check_domain(domain, cache_hours):
         cached_data = config.db.get_cached_domain_info(domain)
         if cached_data:
             logger.info(f"Using cached data for {domain} (last checked: {cached_data['last_checked']})")

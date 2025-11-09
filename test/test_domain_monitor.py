@@ -185,7 +185,7 @@ def test_nameserver_change_detection_in_check_domain(test_config, monkeypatch):
     monkeypatch.setattr("src.domain_checker.whoisit.domain", mock_whoisit_domain)
 
     # First check should not show a change (first time seeing the domain)
-    info1 = check_domain(domain, test_config, force_check=True)
+    info1 = check_domain(domain, test_config, should_refresh=True)
     assert not info1.nameservers_changed
     assert info1.nameservers == ["ns1.example.com", "ns2.example.com"]
 
@@ -200,7 +200,7 @@ def test_nameserver_change_detection_in_check_domain(test_config, monkeypatch):
     monkeypatch.setattr("src.domain_checker.whoisit.domain", mock_whoisit_domain_changed)
 
     # Second check should detect the nameserver change (force check to bypass cache)
-    info2 = check_domain(domain, test_config, force_check=True)
+    info2 = check_domain(domain, test_config, should_refresh=True)
     assert info2.nameservers_changed
     assert sorted(info2.nameservers) == sorted(["ns2.example.com", "ns3.example.com"])
     assert sorted(info2.added_nameservers) == sorted(["ns3.example.com"])
@@ -233,19 +233,19 @@ def test_domain_whois_caching(test_config, monkeypatch):
     test_config.data['general']['cache_hours'] = 48
 
     # First check should do WHOIS lookup
-    info1 = check_domain(domain, test_config, force_check=False)
+    info1 = check_domain(domain, test_config, should_refresh=False)
     assert whois_call_count == 1
     assert info1.error is None
 
     # Second check should use cached data (no new WHOIS call)
-    info2 = check_domain(domain, test_config, force_check=False)
+    info2 = check_domain(domain, test_config, should_refresh=False)
     assert whois_call_count == 1  # Should still be 1
     assert info2.error is None
     assert info2.expiration_date == info1.expiration_date
     assert info2.status == info1.status
 
     # Force check should bypass cache
-    info3 = check_domain(domain, test_config, force_check=True)
+    info3 = check_domain(domain, test_config, should_refresh=True)
     assert whois_call_count == 2  # Should increment
     assert info3.error is None
 
@@ -275,12 +275,12 @@ def test_domain_whois_cache_expiry(test_config, monkeypatch):
     test_config.data['general']['cache_hours'] = 0
 
     # First check
-    info1 = check_domain(domain, test_config, force_check=False)
+    info1 = check_domain(domain, test_config, should_refresh=False)
     assert whois_call_count == 1
     assert info1 is not None
 
     # Second check should do new WHOIS lookup due to expired cache
-    info2 = check_domain(domain, test_config, force_check=False)
+    info2 = check_domain(domain, test_config, should_refresh=False)
     assert whois_call_count == 2
     assert info2 is not None
 
@@ -668,7 +668,7 @@ def test_domain_checker_integration_target_domains():
     config = Config()
 
     # Test eli.pizza
-    info_eli = check_domain('eli.pizza', config, force_check=True)
+    info_eli = check_domain('eli.pizza', config, should_refresh=True)
 
     assert info_eli.domain == 'eli.pizza'
     assert info_eli.error is None
@@ -683,7 +683,7 @@ def test_domain_checker_integration_target_domains():
     assert len(info_eli.nameservers) > 0
 
     # Test elidickinson.com
-    info_elidickinson = check_domain('elidickinson.com', config, force_check=True)
+    info_elidickinson = check_domain('elidickinson.com', config, should_refresh=True)
 
     assert info_elidickinson.domain == 'elidickinson.com'
     assert info_elidickinson.error is None

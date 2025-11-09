@@ -44,7 +44,8 @@ def cli():
 @click.option('--delay', type=float, help='Delay between WHOIS queries (seconds)')
 @click.option('--db-path', help='Override database path')
 @click.option('--no-cache', is_flag=True, help='Force WHOIS lookup even if cached data is available')
-def check_domains(domain, file, config, alert_days, quiet, send_email, delay, db_path, no_cache):
+@click.option('--limit', '-l', type=int, help='Limit number of domains to refresh (cached data doesn\'t count)')
+def check_domains(domain, file, config, alert_days, quiet, send_email, delay, db_path, no_cache, limit):
     """Check domains for expiration dates and status."""
     # Load configuration
     cfg = Config(config)
@@ -106,27 +107,53 @@ def check_domains(domain, file, config, alert_days, quiet, send_email, delay, db
 
     logger.info(f"Checking {len(domains_to_check)} domains...")
 
-    # Check all domains
-    results = []
-    domains_to_alert = []
-    for domain in domains_to_check:
-        domain_info = check_domain(domain, cfg, force_check=no_cache)
+    def process_domain(domain: str) -> None:
+        """Process a single domain and update results/alerts."""
+        domain_info = check_domain(domain, cfg, should_refresh=True)
+        if not domain_info:
+            return
+            
         results.append(domain_info)
-
-        # Check if domain needs alert
+        
         needs_alert_flag, reason = needs_alert(domain_info, cfg)
         if needs_alert_flag:
             domains_to_alert.append((domain_info, reason))
-
+        
         if not quiet:
             if needs_alert_flag:
                 logger.warning(f"{domain_info} - ALERT: {reason}")
             else:
                 logger.info(str(domain_info))
 
+    # Check all domains
+    results = []
+    domains_to_alert = []
+    refreshed_count = 0
+    cache_hours = cfg.data['general']['cache_hours']
+
+    for domain in domains_to_check:
+        # Determine if domain needs refresh (single DB check)
+        needs_refresh = cfg.db.should_check_domain(domain, cache_hours)
+
+        # Skip domains with fresh cache (already alerted when refreshed)
+        if not no_cache and not needs_refresh:
+            continue
+
+        # Skip domains beyond limit (will be checked in future runs)
+        if limit is not None and not no_cache and refreshed_count >= limit:
+            continue
+
+        # Process and refresh domain
+        process_domain(domain)
+        refreshed_count += 1
+
     # Summary
     if not quiet:
-        logger.info(f"Domain check complete: {len(results)} checked, {len(domains_to_alert)} need attention")
+        summary = f"Domain check complete: {len(results)} checked"
+        if limit is not None and not no_cache:
+            summary += f", {refreshed_count} refreshed (limit: {limit})"
+        summary += f", {len(domains_to_alert)} need attention"
+        logger.info(summary)
 
     # Send email alerts or print report if needed
     if domains_to_alert:
