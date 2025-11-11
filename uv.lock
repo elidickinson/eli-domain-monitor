@@ -138,7 +138,7 @@ requires-dist = [
     { name = "pytest", marker = "extra == 'test'", specifier = ">=8.4.2" },
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "rich", specifier = ">=13.3.5" },
-    { name = "whoisit", specifier = ">=3.1.1" },
+    { name = "whoisit", git = "https://github.com/meeb/whoisit.git?rev=main" },
 ]
 provides-extras = ["test"]
 
@@ -386,11 +386,10 @@ wheels = [
 [[package]]
 name = "whoisit"
 version = "3.1.1"
-source = { registry = "https://pypi.org/simple" }
+source = { git = "https://github.com/meeb/whoisit.git?rev=main#5319ce7f677029b0b1a47a89b0e46f861223d9cc" }
 dependencies = [
     { name = "httpx" },
     { name = "python-dateutil" },
     { name = "requests" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/f9/7d/6094d910244a03f17ae8a6e80e60c79f924106483916a75e1ba3f3a528f0/whoisit-3.1.1.tar.gz", hash = "sha256:f38b4e75ad0b86424dba2a728c62cd3f6abd577d7383322c2700c51c5c5b6e08", size = 39495, upload-time = "2025-06-02T13:58:17.391Z" }

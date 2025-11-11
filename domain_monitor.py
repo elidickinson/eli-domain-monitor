@@ -49,6 +49,9 @@ def check_domains(domain, file, config, alert_days, quiet, send_email, delay, db
     """Check domains for expiration dates and status."""
     # Load configuration
     cfg = Config(config)
+    
+    # Track if single domain was specified for cache bypass
+    is_single_domain = bool(domain)
 
     # Override alert days if specified
     if alert_days is not None:
@@ -132,11 +135,14 @@ def check_domains(domain, file, config, alert_days, quiet, send_email, delay, db
     cache_hours = cfg.data['general']['cache_hours']
 
     for domain in domains_to_check:
+        # Force refresh when checking single domain (bypass cache)
+        force_check = is_single_domain or no_cache
+        
         # Determine if domain needs refresh (single DB check)
         needs_refresh = cfg.db.should_check_domain(domain, cache_hours)
 
         # Skip domains with fresh cache (already alerted when refreshed)
-        if not no_cache and not needs_refresh:
+        if not force_check and not needs_refresh:
             continue
 
         # Skip domains beyond limit (will be checked in future runs)

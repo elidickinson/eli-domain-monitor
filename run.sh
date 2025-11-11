@@ -9,7 +9,7 @@ fi
 echo "=== $(date) ===" >> logs/domain-monitor.log
 
 # Set default limit, allow override via environment variable
-DOMAIN_LIMIT=${DOMAIN_LIMIT:-50}
+DOMAIN_LIMIT=${DOMAIN_LIMIT:-40}
 
 # Show output on screen if running interactively, log to file if running from cron
 if [ -t 1 ]; then

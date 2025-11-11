@@ -10,7 +10,7 @@ dependencies = [
     "pyyaml>=6.0",
     "rich>=13.3.5",
     "pytest>=8.4.2",
-    "whoisit>=3.1.1",
+    "whoisit @ git+https://github.com/meeb/whoisit.git@main",
 ]
 
 [project.optional-dependencies]
@@ -19,6 +19,11 @@ test = [
 ]
 
 
+
+
+
+[tool.hatch.metadata]
+allow-direct-references = true
 
 [tool.hatch.build.targets.wheel]
 packages = ["src"]

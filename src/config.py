@@ -33,6 +33,7 @@ class Config:
                 'max_retries': MAX_RETRIES,
                 'db_path': DEFAULT_DB_PATH,
                 'domains_file': None,
+                'cache_hours': 24,
             },
             'email': {
                 'enabled': False,
