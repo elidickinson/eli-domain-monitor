@@ -4,6 +4,7 @@ import smtplib
 import logging
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+from email.utils import formatdate, make_msgid
 from typing import List, Tuple
 from .config import Config
 from .domain_info import DomainInfo
@@ -77,7 +78,9 @@ def send_alert_email(config: Config, domains_to_alert: List[Tuple[DomainInfo, st
         msg['From'] = email_config['from_address']
         msg['To'] = ', '.join(email_config['to_addresses'])
         msg['Subject'] = f"{email_config['subject_prefix']} Domain Alert: {len(domains_to_alert)} domains need attention"
-
+        msg["Message-ID"] = make_msgid()
+        msg["Date"] = formatdate(localtime=True)
+        
         # Use the shared report generation function
         body = generate_alert_report(domains_to_alert)
         msg.attach(MIMEText(body, 'plain'))
@@ -110,6 +113,8 @@ def send_test_email(config: Config, recipient: str) -> bool:
         # Create message
         msg = MIMEMultipart()
         msg['From'] = email_config['from_address']
+        msg["Message-ID"] = make_msgid()
+        msg["Date"] = formatdate(localtime=True)
 
         # Use provided recipient or default to config recipients
         if recipient:
