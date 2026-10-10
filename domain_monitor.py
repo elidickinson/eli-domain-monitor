@@ -48,6 +48,9 @@ def cli():
 @click.option('--limit', '-l', type=int, help='Limit number of domains to refresh (cached data doesn\'t count)')
 def check_domains(domain, file, config, alert_days, quiet, send_email, delay, db_path, no_cache, limit):
     """Check domains for expiration dates and status."""
+    if quiet:
+        logging.getLogger().setLevel(logging.ERROR)
+
     # Load configuration
     cfg = Config(config)
     
@@ -123,11 +126,10 @@ def check_domains(domain, file, config, alert_days, quiet, send_email, delay, db
         if needs_alert_flag:
             domains_to_alert.append((domain_info, reason))
         
-        if not quiet:
-            if needs_alert_flag:
-                logger.warning(f"{domain_info} - ALERT: {reason}")
-            else:
-                logger.info(str(domain_info))
+        if needs_alert_flag:
+            logger.warning(f"{domain_info} - ALERT: {reason}")
+        else:
+            logger.info(str(domain_info))
 
     # Check all domains
     results = []
@@ -155,12 +157,11 @@ def check_domains(domain, file, config, alert_days, quiet, send_email, delay, db
         refreshed_count += 1
 
     # Summary
-    if not quiet:
-        summary = f"Domain check complete: {len(results)} checked"
-        if limit is not None and not no_cache:
-            summary += f", {refreshed_count} refreshed (limit: {limit})"
-        summary += f", {len(domains_to_alert)} need attention"
-        logger.info(summary)
+    summary = f"Domain check complete: {len(results)} checked"
+    if limit is not None and not no_cache:
+        summary += f", {refreshed_count} refreshed (limit: {limit})"
+    summary += f", {len(domains_to_alert)} need attention"
+    logger.info(summary)
 
     # Send email alerts or print report if needed
     if domains_to_alert:
