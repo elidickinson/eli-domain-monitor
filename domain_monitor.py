@@ -24,6 +24,7 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[logging.StreamHandler()]
 )
+logging.captureWarnings(True)
 logger = logging.getLogger('domain_monitor')
 
 
