@@ -9,7 +9,7 @@ fi
 echo "=== $(date) ===" >> logs/domain-monitor.log
 
 # Set default limit, allow override via environment variable
-DOMAIN_LIMIT=${DOMAIN_LIMIT:-40}
+DOMAIN_LIMIT=${DOMAIN_LIMIT:-120}
 
 # Kill runs that hang (normal runs take a few minutes)
 CHECK_TIMEOUT=${CHECK_TIMEOUT:-30m}
