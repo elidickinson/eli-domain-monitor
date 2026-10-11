@@ -171,7 +171,7 @@ def test_nameserver_change_detection_in_check_domain(test_config, monkeypatch):
     domain = "example.com"
 
     # Mock the whoisit and dns resolver calls to control the test
-    def mock_whoisit_domain(domain):
+    def mock_whoisit_domain(domain, **kwargs):
         return {
             'nameservers': ["ns1.example.com", "ns2.example.com"],
             'expiration_date': dt.datetime.now(dt.UTC).replace(tzinfo=None, year=dt.datetime.now(dt.UTC).year + 1),
@@ -190,7 +190,7 @@ def test_nameserver_change_detection_in_check_domain(test_config, monkeypatch):
     assert info1.nameservers == ["ns1.example.com", "ns2.example.com"]
 
     # Now change the nameservers for the next check
-    def mock_whoisit_domain_changed(domain):
+    def mock_whoisit_domain_changed(domain, **kwargs):
         return {
             'nameservers': ["ns2.example.com", "ns3.example.com"],
             'expiration_date': dt.datetime.now(dt.UTC).replace(tzinfo=None, year=dt.datetime.now(dt.UTC).year + 1),
@@ -220,7 +220,7 @@ def test_domain_whois_caching(test_config, monkeypatch):
         }
 
     whois_call_count = 0
-    def counting_mock_whoisit_domain(domain):
+    def counting_mock_whoisit_domain(domain, **kwargs):
         nonlocal whois_call_count
         whois_call_count += 1
         return mock_whoisit_domain(domain)
@@ -262,7 +262,7 @@ def test_domain_whois_cache_expiry(test_config, monkeypatch):
         }
 
     whois_call_count = 0
-    def counting_mock_whoisit_domain(domain):
+    def counting_mock_whoisit_domain(domain, **kwargs):
         nonlocal whois_call_count
         whois_call_count += 1
         return mock_whoisit_domain(domain)

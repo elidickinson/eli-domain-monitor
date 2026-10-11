@@ -108,8 +108,9 @@ def check_domain(domain: str, config: Config, should_refresh: bool = False) -> D
 
     for attempt in range(max_retries):
         try:
-            # Get WHOIS information using whoisit
-            w = whoisit.domain(domain)
+            # Registry data only: registrar data overlaid by follow_related is often
+            # inconsistent with the registry and its servers are flaky
+            w = whoisit.domain(domain, follow_related=False)
 
             # Debug logging for problematic domains
             logger.debug(f"WHOIS object for {domain}: {w}")
