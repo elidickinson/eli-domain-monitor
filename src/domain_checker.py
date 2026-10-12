@@ -12,6 +12,11 @@ from .config import Config
 
 logger = logging.getLogger('domain_monitor.checker')
 
+# TLDs whose RDAP servers only offer ciphers Python excludes by default (rdap.nic.scot
+# only accepts TLS 1.2 AES128-SHA). whoisit's allow_insecure_ssl widens the cipher
+# list but still verifies certificates.
+LEGACY_CIPHER_TLDS = ('.scot',)
+
 def is_subdomain(domain: str) -> bool:
     """
     Determine if a domain is a subdomain.
@@ -110,7 +115,8 @@ def check_domain(domain: str, config: Config, should_refresh: bool = False) -> D
         try:
             # Registry data only: registrar data overlaid by follow_related is often
             # inconsistent with the registry and its servers are flaky
-            w = whoisit.domain(domain, follow_related=False)
+            w = whoisit.domain(domain, follow_related=False,
+                               allow_insecure_ssl=domain.endswith(LEGACY_CIPHER_TLDS))
 
             # Debug logging for problematic domains
             logger.debug(f"WHOIS object for {domain}: {w}")
